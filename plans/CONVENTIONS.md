@@ -45,7 +45,7 @@ The plan is not meant to be 100% gapless — some decisions are made on the go. 
 - **Rule:** batched inference only in production code. Single-example inference permitted in notebooks and tests only.
 - **Sizing:** `max_input_len` and `max_output_len` per task derived from token-distribution audit (not guessed). Documented per task in `configs/`.
 - **Target:** ≥90% GPU utilization on steady-state runs. If a new run consistently underutilizes, tune batch size / KV cache / tensor parallel before proceeding.
-- **Serving topology:** judge server(s) run persistently on dedicated GPUs; experiment loads co-locate on remaining GPUs.
+- **Serving topology: phased, not always-on.** Subject model on all 4 GPUs → generate + stash responses to parquet → tear down → load primary judge on all 4 GPUs → classify batch → tear down → optionally load cross-check judge on the 200-sample subset → tear down. Judges are batch-processing steps, not long-running services. Lets large subjects (Llama 3.3 70B) use the full cluster without co-locating a judge. Co-location is allowed only as an optimization when the subject model leaves ≥2 GPUs free.
 
 ### Checkpointing
 - **Principle:** checkpoint at meaningful stage boundaries, not after every prompt.

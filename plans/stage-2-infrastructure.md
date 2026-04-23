@@ -39,13 +39,13 @@
   - Support: TransformerLens hooks, configurable layers, configurable strength
   - Test: steer Gemma 2 27B on PC1 at strength 1.0, verify output changes qualitatively
 
-- [ ] T2.4: Implement safety evaluation harness
-  - `src/evaluation/safety_eval.py` — run jailbreak prompts on subject model (batched), collect responses
-  - `src/evaluation/judge.py` — call **self-hosted primary judge** (Qwen 3.6-27B, OpenAI-compatible endpoint set up in Stage 0), parse labels, handle batching + retries + backpressure. Also supports optional cross-check call to Gemma 4 31B-it on a configurable subset.
-  - `src/evaluation/safety_metrics.py` — aggregate harm rate, bootstrap CI, Cohen's d, inter-judge agreement rate
+- [ ] T2.4: Implement safety evaluation harness (phased)
+  - `src/evaluation/safety_eval.py` — **subject phase.** Loads subject model on all 4 GPUs, runs jailbreak prompts batched, writes `(prompt_id, condition, response, activations)` rows to `results/exp{N}_{name}/responses.parquet`, tears down.
+  - `src/evaluation/judge.py` — **judge phase.** Takes a path to a responses parquet, loads the primary judge (Qwen 3.6-27B) on all 4 GPUs, batch-classifies, writes `judge1_label` column back to the parquet, tears down. Optional second invocation with Gemma 4 31B-it for cross-check on a configurable 200-sample subset → writes `judge2_label` column.
+  - `src/evaluation/orchestrator.py` — the phase driver. Calls subject phase → judge phase → optional cross-check phase in sequence. Handles the **self-preference rule**: when subject is Gemma 4 31B-it, skip the cross-check judge phase (primary only).
+  - `src/evaluation/safety_metrics.py` — aggregates from the labelled parquet: harm rate, bootstrap CI, Cohen's d, inter-judge agreement rate (where both labels present).
   - **Judge prompt template:** design and log to `CONVENTIONS.md` under "Judge prompt template". Include label set (e.g., harmful / refusal / ambiguous), parsing rules, cross-check subset size.
-  - **Self-preference rule:** skip Gemma-as-judge when Gemma 4 31B-it is the subject. Enforce in code.
-  - Test: evaluate 20 jailbreak prompts on Gemma 2 27B (unsteered) against the running judge endpoint; verify parseable labels and agreement computation.
+  - Test: run orchestrator on 20 jailbreak prompts through Gemma 2 27B (unsteered) → primary judge → 10-sample cross-check. Verify all three phases produce the expected parquet columns and aggregates compute correctly.
 
 - [ ] T2.5: Implement capability evaluation harness
   - `src/evaluation/capability_eval.py` — run benchmark prompts, score automatically

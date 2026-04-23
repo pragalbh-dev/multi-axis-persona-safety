@@ -41,7 +41,12 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 - **Batched inference mandatory.** Single-example inference only in notebooks/tests.
 - **Target ≥90% GPU utilization** on steady-state runs. Tune batch size / KV cache / TP before proceeding if under.
 - **Sizing:** `max_input_len` and `max_output_len` set per task from a token-distribution audit (Stage 0 T0.2), not guessed. Larger than needed wastes KV-cache memory.
-- **Topology:** judge server(s) run persistently on dedicated GPUs; experiment loads co-locate on remaining GPUs. 4× RTX 5090 = 128GB → typically 2 GPUs for judge, 2 for subject, with tensor parallelism per side.
+- **Phased topology (not an always-on judge server):**
+  1. **Subject phase** — load subject model on all 4 GPUs, generate responses for every (prompt × condition) cell of the experiment, stash `(prompt_id, condition, response, activations)` rows to parquet, tear down the subject.
+  2. **Primary judge phase** — load Qwen 3.6-27B dense on all 4 GPUs (TP=4, or TP=2 × data_parallel=2 for higher throughput), batch-classify the stashed responses, append labels to the parquet, tear down.
+  3. **Cross-check phase** — load Gemma 4 31B-it on all 4 GPUs, classify the 200-sample subset, append `judge2_label` column, tear down. Skipped when Gemma 4 31B-it is the subject of the current experiment.
+- **Why phased:** Llama 3.3 70B and other large subjects want all 4 GPUs. Co-locating an always-on judge would force subjects to quantize harder or page to CPU. Phased = each model uses the full cluster at ~90%+ util and there is no cross-contention.
+- **Exception:** if a subject model is small enough to leave ≥2 GPUs free (e.g., Gemma 2 27B bf16 on 2 GPUs), the judge MAY be co-located for overlap — but only as an optimization, never the default.
 
 ### Tooling Versions & Env
 - **Package manager:** `uv` with `pyproject.toml` + lockfile committed.

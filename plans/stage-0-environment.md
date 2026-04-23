@@ -80,20 +80,21 @@ No prior stage. You are the first.
     - What's missing — does either repo have: batched judge eval harness? multi-axis steering? capability eval integration? Note for Stage 2 agent.
   - Download pre-computed persona axes for Tier 1 models from HuggingFace.
 
-- [ ] **T0.8: Set up judge server (primary: Qwen 3.6-27B dense)**
-  - Serve via chosen inference engine with an OpenAI-compatible endpoint (both vLLM and SGLang provide this)
-  - Config: thinking OFF by default, `max_input_len` and `max_output_len` from T0.2 judge values
-  - Allocate 2 of the 4 GPUs to the judge server with tensor parallelism; leave 2 for experiment loads
-  - Health check + graceful batch backpressure
-  - Minimal test script: send 10 (prompt, response, rubric) triples in one batch, parse labels, measure latency + tokens/sec
-  - Record: batch size, TP size, tokens/sec, steady-state GPU util in `CONVENTIONS.md` under "Batch size & TP per model"
+- [ ] **T0.8: Set up primary judge as a batch-processing step (Qwen 3.6-27B dense)**
+  - **Not a persistent server.** Build a script that (a) loads the judge on all 4 GPUs, (b) streams a parquet of `(prompt, response)` rows through it in batches, (c) writes back labels + parses, (d) tears down.
+  - Chosen engine's offline/batch API (both vLLM and SGLang support this) is preferred over an HTTP server for the default path.
+  - Config: thinking OFF by default, `max_input_len` / `max_output_len` from T0.2 judge values.
+  - Try TP=4 first, then TP=2 × data_parallel=2 — pick whichever hits higher throughput for the judge's input/output shape.
+  - Minimal test: feed 1,000 synthetic `(prompt, response)` rows, parse labels end-to-end, measure tokens/sec and steady-state GPU util (should be ≥90%).
+  - Record batch size, TP/DP config, tokens/sec, total-classification-time-for-1,100-prompts in `CONVENTIONS.md` under "Batch size & TP per model".
 
-- [ ] **T0.9: Verify cross-check judge (Gemma 4 31B-it)**
-  - Load Gemma 4 31B-it on its own server instance (separate from Tier 2 subject runs)
-  - Thinking OFF default
-  - Verify same test as T0.8 passes
-  - Also: optional sanity check of thinking ON vs OFF on ~30 ambiguous harm prompts — if thinking ON materially changes labels, flag for Stage 2 judge-prompt design
-  - Note the self-preference rule: when Gemma 4 31B-it is the subject model in an experiment, skip the Gemma-as-judge pass for those prompts.
+- [ ] **T0.9: Verify cross-check judge in the same load-batch-unload pattern (Gemma 4 31B-it)**
+  - Use the same batch-processing script, swap model weights to Gemma 4 31B-it.
+  - Thinking OFF default.
+  - Test against the same 1,000-row synthetic input. Verify parseable labels.
+  - Optional sanity check: thinking ON vs OFF on ~30 ambiguous prompts — if ON materially changes labels, flag for Stage 2 judge-prompt design.
+  - **Self-preference rule:** when Gemma 4 31B-it is the *subject* of an experiment, the orchestration script must skip the Gemma-as-judge pass on those prompts. Enforce this in the judge driver, not in manual discipline.
+  - **Exception path (keep for later):** if a subject model is small enough to leave ≥2 GPUs free during its phase (e.g., Gemma 2 27B bf16 on 2 GPUs), a co-located judge endpoint is allowed as an optimization. Not the default — document the optimization path but don't build an always-on server in Stage 0.
 
 - [ ] **T0.10: Download evaluation datasets**
   - Shah et al. persona-based jailbreak (1,100 prompts) — find the canonical source; assistant-axis repo may point to it
@@ -101,10 +102,14 @@ No prior stage. You are the first.
   - Save under `data/eval/<dataset>/`
   - Record exact HF IDs / source URLs in `CONVENTIONS.md` under "Eval dataset IDs"
 
-- [ ] **T0.11: Baseline GPU util test**
-  - Run a dummy batched eval: 1000 prompts through the judge (T0.8) and 1000 prompts through Gemma 2 27B on the other 2 GPUs.
-  - Measure tokens/sec + GPU util via `nvidia-smi dmon` or `nvidia-smi --query-gpu=utilization.gpu` loop.
-  - **Acceptance: ≥90% steady-state GPU util on both sides.** If under, tune batch size / KV cache / TP before moving on.
+- [ ] **T0.11: Baseline GPU util test for the phased pipeline**
+  - End-to-end dry run of one phase sequence on dummy data:
+    - Phase 1: load Gemma 2 27B on all 4 GPUs, generate 1,000 responses to synthetic prompts, save to parquet, tear down.
+    - Phase 2: load Qwen 3.6-27B judge on all 4 GPUs, classify those 1,000 responses, save labels, tear down.
+    - Phase 3 (only if also verifying cross-check): load Gemma 4 31B-it, classify a 200-row subset, save, tear down.
+  - Measure per-phase: tokens/sec, steady-state GPU util (`nvidia-smi dmon` loop), wall-clock time, and model load/unload overhead.
+  - **Acceptance: ≥90% steady-state GPU util during each generate/classify phase.** If load/unload overhead > 10% of phase duration, flag for Stage 2 — we may need to batch multiple experiments' judging into one judge load.
+  - Record per-phase numbers in `CONVENTIONS.md` under "Batch size & TP per model".
 
 - [ ] **T0.12: Write Stage 0 → Stage 1 Handoff**
   - Append the Handoff block to `progress.md`
