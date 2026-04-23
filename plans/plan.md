@@ -8,7 +8,7 @@ If you're a new agent picking up this project:
 2. Read this file — stage overview, see where we are
 3. Read `progress.md` — what's been done
 4. Read the active stage plan (linked from the table below) — your current tasks
-5. If you need research context: read `~/Documents/knowledge-base/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
+5. If you need research context: read `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
 
 Do NOT read the full scope doc unless you specifically need research context (hypotheses, positioning, methodology details). The CLAUDE.md has all the operational decisions.
 
@@ -18,7 +18,7 @@ Do NOT read the full scope doc unless you specifically need research context (hy
 
 We extend the Assistant Axis paper to study persona space beyond PC1. Four sub-questions: structure (how many PCs matter), safety (do orthogonal PCs carry safety info), geometry (linear vs manifold), defense (does multi-axis capping help). Six core experiments, 5 analytical visualizations + 1 interactive demo, paper + blog post.
 
-**Scope doc:** `~/Documents/knowledge-base/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
+**Scope doc:** `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
 
 ---
 

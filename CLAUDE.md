@@ -2,9 +2,11 @@
 
 Extending the Assistant Axis paper (Lu et al., arXiv 2601.10387) to study the safety-relevant geometry of persona space beyond PC1. Core question: does PC1-only activation capping have blind spots, and can multi-axis capping do better?
 
-**Wiki scope doc:** `~/Documents/knowledge-base/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
-**Conversation history:** `~/Documents/knowledge-base/obsidian-vault/raw/conversations/multi-axis-persona-safety-scoping-2026-04-22.md`
-**Research ideas basket:** `~/Documents/knowledge-base/obsidian-vault/wiki/syntheses/research-ideas-basket.md`
+**Wiki scope doc:** `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
+**Conversation history:** `~/obsidian-vault/raw/conversations/multi-axis-persona-safety-scoping-2026-04-22.md`
+**Research ideas basket:** `~/obsidian-vault/wiki/syntheses/research-ideas-basket.md`
+
+> **Note on paths:** `~/obsidian-vault/` is a symlink on both laptop and GPU pointing to the actual obsidian vault (laptop: `~/Documents/knowledge-base/obsidian-vault/`, GPU: `~/data-science/research/knowledge-base/obsidian-vault/`). If the symlink is missing, create it: `ln -s <actual-vault-path> ~/obsidian-vault`.
 
 ---
 
