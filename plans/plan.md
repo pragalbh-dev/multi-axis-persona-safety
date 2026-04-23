@@ -6,11 +6,34 @@ If you're a new agent picking up this project:
 
 1. Read `../CLAUDE.md` (auto-loaded) — project identity, key decisions, conventions
 2. Read this file — stage overview, see where we are
-3. Read `progress.md` — what's been done
-4. Read the active stage plan (linked from the table below) — your current tasks
-5. If you need research context: read `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
+3. Read `CONVENTIONS.md` — locked tooling/style decisions + log of in-flight decisions
+4. Read `progress.md` — what's been done, plus the latest **Handoff block** for your stage
+5. Read the active stage plan (linked from the table below). Start with the "Required inputs" section at the top.
+6. If you need research context: read `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
 
 Do NOT read the full scope doc unless you specifically need research context (hypotheses, positioning, methodology details). The CLAUDE.md has all the operational decisions.
+
+---
+
+## Stage-to-stage handoff protocol
+
+Every stage passes context forward via a **Handoff block** in `progress.md`. The last task of every stage is to write this block.
+
+**When you finish a stage:**
+1. Check all task boxes in the stage plan.
+2. Update "Current State" in `../CLAUDE.md` (active stage → next stage, date).
+3. Append a Handoff block to `progress.md` (template at top of that file). It must list:
+   - Artifacts produced (paths + what's in them)
+   - Key decisions locked this stage (mirror the important ones into `CONVENTIONS.md` "Decide and log")
+   - Gotchas discovered that the next stage needs to know
+   - Open items the next stage must resolve
+
+**When you start a stage:**
+1. Open `progress.md` and find the Handoff block for your stage (e.g., "Stage 2 → Stage 3 Handoff").
+2. That tells you where inputs live and what to watch for.
+3. The stage plan's "Required inputs" section points to the same Handoff — read both.
+
+This is the mechanism for a fresh agent (after context reset) to pick up without reading every prior stage plan.
 
 ---
 
@@ -36,7 +59,7 @@ We extend the Assistant Axis paper to study persona space beyond PC1. Four sub-q
 | 7 | Extensions | [stage-7-extensions.md](stage-7-extensions.md) | pending | varies | 0 | Stage 6 |
 | 8 | Presentation & dissemination | [stage-8-presentation.md](stage-8-presentation.md) | pending | 8 | 0 | Stages 3-6 |
 
-**Note:** Stages 4 and 5 can run in parallel (different GPU workloads, no dependency between them).
+**Note:** Stages 4 and 5 can run in parallel (different GPU workloads, no dependency between them). (Only if we have enough GPUs)
 
 ---
 

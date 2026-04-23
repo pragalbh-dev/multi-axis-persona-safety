@@ -8,6 +8,17 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — **every Handoff from Stage 3 onward**: artifact paths, headline numbers, figures per stage.
+- `CONVENTIONS.md` — file layout, figure-naming conventions.
+- Precomputed tuples for Viz 6 from Stages 3-6 (must have been saved per T2.6 rule).
+- Report skeleton in `report/paper.md` drafted progressively during prior stages.
+
+**Last task of this stage: append Final Handoff block to `progress.md` with deployment URLs (HF Spaces, GitHub, blog post, arXiv ID if applicable) so future-you can find everything.**
+
+---
+
 ## Tasks
 
 - [ ] T8.1: Build Viz 6 (Persona Steering Playground)

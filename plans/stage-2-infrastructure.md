@@ -8,6 +8,16 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — read the **Stage 1 → Stage 2 Handoff**: finalized module interfaces, shared data types, results directory schema, experiment config template.
+- `CONVENTIONS.md` — `results/` layout, parquet schema rules, seed handling, checkpointing principle.
+- `../CLAUDE.md` — Inference & Serving section (judge is self-hosted, hit the endpoint set up in Stage 0, thinking OFF by default).
+
+**Last task of this stage (after T2.9): append Stage 2 → Stage 3 Handoff to `progress.md`.**
+
+---
+
 ## Tasks
 
 - [ ] T2.1: Implement activation extraction pipeline
@@ -30,10 +40,12 @@
   - Test: steer Gemma 2 27B on PC1 at strength 1.0, verify output changes qualitatively
 
 - [ ] T2.4: Implement safety evaluation harness
-  - `src/evaluation/safety_eval.py` — run jailbreak prompts, collect responses
-  - `src/evaluation/judge.py` — call judge API (GPT-4.1-mini), parse scores, handle batching/retries/rate-limits
-  - `src/evaluation/safety_metrics.py` — aggregate harm rate, bootstrap CI, Cohen's d
-  - Test: evaluate 20 jailbreak prompts on Gemma 2 27B (unsteered), verify judge returns parseable scores
+  - `src/evaluation/safety_eval.py` — run jailbreak prompts on subject model (batched), collect responses
+  - `src/evaluation/judge.py` — call **self-hosted primary judge** (Qwen 3.6-27B, OpenAI-compatible endpoint set up in Stage 0), parse labels, handle batching + retries + backpressure. Also supports optional cross-check call to Gemma 4 31B-it on a configurable subset.
+  - `src/evaluation/safety_metrics.py` — aggregate harm rate, bootstrap CI, Cohen's d, inter-judge agreement rate
+  - **Judge prompt template:** design and log to `CONVENTIONS.md` under "Judge prompt template". Include label set (e.g., harmful / refusal / ambiguous), parsing rules, cross-check subset size.
+  - **Self-preference rule:** skip Gemma-as-judge when Gemma 4 31B-it is the subject. Enforce in code.
+  - Test: evaluate 20 jailbreak prompts on Gemma 2 27B (unsteered) against the running judge endpoint; verify parseable labels and agreement computation.
 
 - [ ] T2.5: Implement capability evaluation harness
   - `src/evaluation/capability_eval.py` — run benchmark prompts, score automatically
@@ -79,7 +91,7 @@
 ## Notes
 
 - The smoke test is the gate for proceeding to Stage 3. If it doesn't pass cleanly, fix infrastructure before starting experiments.
-- Judge API cost for smoke test: ~100 calls × ~500 tokens = ~50K tokens ≈ $0.02 on GPT-4.1-mini. Negligible.
+- Judge calls cost zero dollars — judge is self-hosted on our GPUs. The cost is GPU-time. Estimate the judge server throughput (from Stage 0 T0.11) and plan experiment schedules so judge and subject inference don't contend for GPUs.
 - The full output tuple saving (T2.6) is critical for Viz 6 later. Don't skip it to save space — 15MB total for the whole project.
 - For PCA validation (T2.2): the paper reports PC1-assistant-axis cosine sim > 0.71 at middle layer. If we get < 0.6, something is wrong with our extraction pipeline.
 - TransformerLens hook names differ per model family. Document the exact hook for each Tier 1 model in a `configs/model_hooks.yaml`.

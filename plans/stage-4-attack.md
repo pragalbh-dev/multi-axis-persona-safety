@@ -8,6 +8,18 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — **Stage 3 → Stage 4 Handoff**: per-model list of safety-relevant PCs, LASSO model path (for T4.6 adversarial direction), baseline harm rates.
+- `CONVENTIONS.md` — random baseline rule (always 5 matched-norm random vectors; do not skip), seed rule, parquet row format for steering sweeps.
+- Cached role vectors + PCA from Stage 3 (don't recompute).
+
+Can run in parallel with Stage 5 (no cross-dependency). If running in parallel, coordinate judge server usage — two stages hitting the same judge will fight for GPU time.
+
+**Last task of this stage (after T4.8): append Stage 4 → Stage 6 Handoff to `progress.md`. Must include: capping bypass rate per model/PC, adversarial direction paths (for Stage 6 defense testing), layer-sweep results for PC2/PC3.**
+
+---
+
 ## Experiment 3: Orthogonal Steering
 
 ### Tasks

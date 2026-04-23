@@ -8,6 +8,16 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — **Stage 3 → Stage 4 Handoff** (same Handoff Stage 4 uses): PC directions, cached role vectors, PCA manifests. Stage 5 does not depend on Stage 4 results.
+- `CONVENTIONS.md` — seed rule, rollout batch size, judge prompt template.
+- If running in parallel with Stage 4: coordinate judge-server GPU time. Consider running Stage 5's composition rollouts on the subject GPUs while Stage 4's judge-heavy work queues.
+
+**Last task of this stage (after T5.7): append Stage 5 → Stage 6 Handoff to `progress.md`. Must include: safety-concerning compositions list + paths (for Stage 6 to test against multi-axis defense), linearity R² per category, residual-direction analysis.**
+
+---
+
 ## Tasks
 
 - [ ] T5.1: Select persona pairs for composition

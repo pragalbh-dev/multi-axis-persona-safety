@@ -2,9 +2,19 @@
 
 **Objective:** Build and evaluate multi-axis activation capping as an improved defense. Show the Pareto frontier for PC1-only vs multi-axis capping.
 
-**Prerequisites:** Stage 4 complete (know which PCs are exploitable and at what severity).
+**Prerequisites:** Stage 4 complete (know which PCs are exploitable and at what severity). Stage 5 results used as adversarial test cases if available.
 
 **Completion criteria:** Multi-axis capping implemented and calibrated, Pareto frontiers compared, optimal defense dimensionality determined. Report section 8 drafted. Viz 4 built.
+
+---
+
+## Required inputs
+
+- `progress.md` — **Stage 4 → Stage 6 Handoff**: exploitable PCs per model, adversarial null-space direction paths, layer ranges for PC2/PC3. Plus **Stage 5 → Stage 6 Handoff** if available: safety-concerning compositions.
+- `CONVENTIONS.md` — validation/test split rule, Pareto analysis conventions.
+- Cached role vectors + PCA from Stage 3, adversarial directions from Stage 4.
+
+**Last task of this stage (after T6.6): append Stage 6 → Stage 7 Handoff (or Stage 6 → Stage 8 if skipping extensions) to `progress.md`. Must include: optimal multi-axis capping config per model (PCs + thresholds + layers), headline number (incremental harm reduction over PC1-only), adversarial robustness of the defense.**
 
 ---
 

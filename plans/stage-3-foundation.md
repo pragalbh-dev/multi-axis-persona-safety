@@ -8,6 +8,17 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — **Stage 2 → Stage 3 Handoff**: module interfaces, judge endpoint URL + latency/throughput, activation cache parquet schema, config template path.
+- `CONVENTIONS.md` — seed rule, parquet schema, judge prompt template (filled in Stage 2), checkpointing principle.
+- Pre-computed role vectors from the assistant-axis HuggingFace repo (downloaded in Stage 0).
+- Tier 1 models loaded and verified (thinking OFF on Qwen 3).
+
+**Last task of this stage (after T3.10): append Stage 3 → Stage 4 Handoff to `progress.md`. Must include: list of safety-relevant PCs per model (for Stage 4 steering direction selection), LASSO model path (for Stage 4 adversarial direction construction), blind spot fraction per model.**
+
+---
+
 ## Experiment 1: Persona Space Decomposition
 
 ### Tasks

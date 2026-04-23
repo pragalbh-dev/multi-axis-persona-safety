@@ -8,6 +8,16 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — read the **Stage 0 → Stage 1 Handoff** block: chosen inference engine, Python version, model IDs, max_input/output per task, judge server topology, what's reusable from `safety-research/assistant-axis` and `safety-research/persona_vectors`.
+- `CONVENTIONS.md` — locked decisions + already-filled "Decide and log" sections.
+- `../CLAUDE.md` — code conventions and directory structure to honor.
+
+**Last task of this stage (T1.7+1): append Stage 1 → Stage 2 Handoff to `progress.md`.**
+
+---
+
 ## Tasks
 
 - [ ] T1.1: Design codebase structure

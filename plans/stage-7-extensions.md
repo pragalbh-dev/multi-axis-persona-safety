@@ -8,6 +8,18 @@
 
 ---
 
+## Required inputs
+
+- `progress.md` — **Stage 6 → Stage 7 Handoff**: finalized multi-axis defense config (for Ext 1-2 to test on Tier 2), all cached artifacts paths, open questions raised by core results.
+- `CONVENTIONS.md` — all sections, especially the model IDs (to avoid re-deciding Tier 2 IDs).
+- Tier 2 models loaded and verified in Stage 0.
+
+**Reasoning-model handling (Ext 2) is already partially subsumed by Tier 2's dual-mode runs (thinking ON/OFF on Gemma 4 31B and Qwen 3.6-35B-A3B MoE).** Ext 2 here means: deeper analysis of thinking vs non-thinking differences in persona space — not a separate model load. Update T7.4–T7.6 accordingly when picking this up.
+
+**Last task of each extension: append a Stage 7.{ext} Handoff block to `progress.md` so later extensions or Stage 8 can find the artifacts.**
+
+---
+
 ## Extension priority (from scope doc)
 
 | Rank | Extension | Effort | Value | Status |
