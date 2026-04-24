@@ -56,3 +56,71 @@ Copy this block, fill in, append at the **end** of this file. Do not edit earlie
 ## Log
 
 (append entries below this line)
+
+## [2026-04-24 17:30] Stage 0 / T0.1 — Inference engine = vLLM 0.19.1 (not 0.20.0)
+
+**Decision:** Pin `vllm==0.19.1` as the project's inference engine. Python 3.12 (resolved to 3.12.0 via pyenv).
+
+**Alternatives considered:**
+- vLLM 0.20.0 — exists as a git tag and GitHub release (2026-04-23), but marked `PRERELEASE: True`; not on PyPI `info.version`. Would need `uv add vllm==0.20.0rc1` or similar and risk pre-GA bugs.
+- SGLang 0.5.10 — viable fallback; less verified for Qwen 3.6 and Qwen 3 thinking-mode toggles per the Stage 0 exploration.
+
+**Reason:** vLLM 0.19.1 is the current stable PyPI release (uploaded 2026-04-18). Its registry already includes `Qwen3_5ForConditionalGeneration` (covers Qwen 3.6-27B) and `Gemma4ForConditionalGeneration`, and its predecessor 0.19.0 added Blackwell sm_120 CUTLASS blockwise FP8 GEMM (release notes cite PR #37970) — matches our 5090 hardware. Transformers v5 support landed in 0.19.1. Going stable > prerelease for the first locked env.
+
+**Source:**
+- https://pypi.org/pypi/vllm/json — `info.version == "0.19.1"` uploaded 2026-04-18T05:49:16.
+- https://api.github.com/repos/vllm-project/vllm/releases/tags/v0.19.0 — Blackwell SM120 fp8 GEMM (#37970), Gemma 4 architecture support (#38826), Transformers v5 adopted.
+- https://api.github.com/repos/vllm-project/vllm/releases/tags/v0.19.1 — 10+ Gemma 4 bug fixes; transformers v5.5.3 pin.
+- https://raw.githubusercontent.com/vllm-project/vllm/v0.19.1/vllm/model_executor/models/registry.py — registry confirms Qwen3_5 + Gemma4 arch classes at 0.19.1 tag.
+
+**Reversibility:** medium. Flipping to 0.20.0rc / 0.18.x / SGLang requires re-running `uv lock` + re-validating model load tests.
+
+**How to revert:** bump `vllm==` in `pyproject.toml`, `uv lock && uv sync`, re-run `scripts/smoke_load.py`.
+
+**Downstream dependencies:** every Stage 0/1/2+ model load. Affects CONVENTIONS.md "Inference engine" and "Python version" entries; affects Stage 2 T2.3 capper + T2.4 judge driver API surface.
+
+---
+
+## [2026-04-24 17:35] Stage 0 / T0.1 — Torch version resolved to 2.10.0+cu128 (not 2.11.0+cu130)
+
+**Decision:** Accept `torch==2.10.0+cu128` as pulled transitively by vllm 0.19.1 (not 2.11.0+cu130 as the initial research suggested for vLLM 0.20.0).
+
+**Alternatives considered:**
+- Force `torch==2.11.0+cu130` via explicit pin and custom index URL — risks breaking vLLM 0.19.1's own pin.
+
+**Reason:** vLLM 0.19.1's wheel spec pulls torch 2.10.0+cu128. Our driver 580.126.09 advertises CUDA 13.0 max runtime which is backward-compatible with cu128. `torch.cuda.is_available()` works, both 5090s report sm_120 compute capability, 33.7 GB each. No need to fight the resolver.
+
+**Source:**
+- `uv sync` output: `+ torch==2.10.0+cu128`.
+- `uv run python -c "import torch; print(torch.__version__, torch.version.cuda)"` → `2.10.0+cu128 12.8`.
+- `nvidia-smi` driver=580.126.09, CUDA Version advertised 13.0.
+
+**Reversibility:** low-medium. Would need overriding vLLM's torch pin via `tool.uv.override-dependencies`, which might break other pkgs.
+
+**How to revert:** only if a later blocker demands it; add override in pyproject and re-test everything.
+
+**Downstream dependencies:** none directly — our code doesn't rely on torch 2.11 features.
+
+---
+
+## [2026-04-24 17:40] Stage 0 / T0.4 — Gemma 2 27B FP8 checkpoint = `Infermatic/gemma-2-27b-it-FP8-Dynamic`
+
+**Decision:** Use `Infermatic/gemma-2-27b-it-FP8-Dynamic` as the quantized Gemma 2 27B subject checkpoint.
+
+**Alternatives considered:**
+- `nm-testing/gemma-2-27b-it-FP8` and `neuralmagic/gemma-2-27b-it-FP8` — the Stage 0 research report named these, but HF API returns 401 on both (repos don't exist — HF's 401-for-unknown-repo behavior when unauthenticated; authenticated `HfApi().model_info(...)` would 404).
+- `dangvansam/gemma-2-27b-it-FP8-fix-system-role` (17 dls) — niche fork that tweaks system-role handling; unnecessary complication.
+- `mbley/google-gemma-2-27b-it-AWQ` (454 dls) — AWQ fallback if FP8 fails.
+
+**Reason:** `Infermatic/gemma-2-27b-it-FP8-Dynamic` has the highest community download count (134) of the existing Gemma 2 27B FP8 variants on HF. Config confirms `Gemma2ForCausalLM` / 46 layers / 4608 hidden / `quant_method: fp8`. FP8-Dynamic (activations quantized at runtime) is supported by vLLM. No official Google FP8 for Gemma 2 27B exists, so a community variant is required; this is the most-battle-tested option.
+
+**Source:**
+- https://huggingface.co/api/models?search=gemma-2-27b-it+fp8 — searched and ranked by downloads, 2026-04-24.
+- https://huggingface.co/Infermatic/gemma-2-27b-it-FP8-Dynamic/raw/main/config.json — config verified, `architectures=['Gemma2ForCausalLM']`, `quantization_config.quant_method='fp8'`.
+
+**Reversibility:** high. If extraction-fidelity check fails in Stage 3 T3.1.0, switch to the AWQ fallback `mbley/google-gemma-2-27b-it-AWQ` and re-run.
+
+**How to revert:** change the model ID in `configs/subjects.yaml` (to be created in Stage 2 T2.1) and re-run the quant-validity check.
+
+**Downstream dependencies:** Stage 3 T3.1.0 quant-validity check; all Stage 3/4/6 experiments that use Gemma 2 27B.
+

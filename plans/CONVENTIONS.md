@@ -125,20 +125,20 @@ These are derived directly from Lu et al. 2601.10387 via line-by-line check of t
 These aren't locked — the agent running the relevant stage decides. But once decided, append to this file under the relevant heading so later stages inherit.
 
 ### Python version
-> _Decided Stage 0: <version>. Reason: <compatibility note>._
+> **Decided Stage 0 / T0.3 (2026-04-24):** Python **3.12** (resolved by uv to 3.12.0 from pyenv). Reason: vLLM 0.19.1 supports 3.10–3.13; 3.12 is the mid-stable target. Pinned in `.python-version` and `pyproject.toml`.
 
 ### Inference engine
-> _Decided Stage 0: vLLM <x.y.z> / SGLang <x.y.z>. Reason: day-0 support for <models>, batch throughput <tokens/sec at util %>._
+> **Decided Stage 0 / T0.1 (2026-04-24):** vLLM **0.19.1** (stable on PyPI 2026-04-18). Torch resolves to **2.10.0+cu128**. Reason: Qwen3_5 + Gemma4 arch classes present in 0.19.1 registry; Blackwell sm_120 CUTLASS fp8 GEMM landed in 0.19.0 (#37970); transformers v5.5.3 pin via 0.19.1 patches. SGLang was viable but less verified for Qwen 3.6 and Qwen 3 thinking-mode toggles. v0.20.0 is GitHub prerelease only — not pinning prereleases. See `plans/decisions.md` entry 2026-04-24 17:30.
 
 ### Model IDs (exact HuggingFace paths)
-> _Decided Stage 0._
-> - Tier 1 Gemma 2 27B IT: `<hf-id>`
-> - Tier 1 Qwen 3 32B: `<hf-id>` (thinking mode: OFF for reproduction)
-> - Tier 1 Llama 3.3 70B IT: `<hf-id>`
-> - Tier 2 Gemma 4 31B IT: `<hf-id>` (run both thinking ON + OFF)
-> - Tier 2 Qwen 3.6-35B-A3B MoE: `<hf-id>` (run both thinking ON + OFF)
-> - Judge primary Qwen 3.6-27B dense: `<hf-id>` (thinking OFF default)
-> - Judge cross-check Gemma 4 31B IT: same as Tier 2 subject, separate server instance
+> **Decided Stage 0 / T0.4+T0.5 (verification 2026-04-24; loads pending).** All FP8 checkpoints verified to exist + config inspected. Quant-validity (Stage 3 T3.1.0) still gates extraction.
+> - Subject Gemma 2 27B IT: `Infermatic/gemma-2-27b-it-FP8-Dynamic` (community fp8 — no official Google fp8 exists; `nm-testing/...` and `neuralmagic/...` are nonexistent per HF API). Base tokenizer/config from `google/gemma-2-27b-it` (gated=manual, license already accepted on account `ub0001`).
+> - Subject Qwen 3 32B (thinking OFF): `Qwen/Qwen3-32B-FP8` (official). Arch `Qwen3ForCausalLM`. Toggle via `chat_template_kwargs={"enable_thinking": False}`.
+> - Subject Gemma 4 31B IT (thinking ON+OFF): `RedHatAI/gemma-4-31B-it-FP8-block` (community fp8; compressed-tensors format). Arch `Gemma4ForConditionalGeneration` (multimodal; text-only use). `trust_remote_code=True` required. **Use TRITON_ATTN attention backend** (vLLM #40677 — FLASHINFER breaks Gemma 4 on Blackwell).
+> - Judge primary Qwen 3.6-27B: `Qwen/Qwen3.6-27B-FP8` (official, last modified 2026-04-24). Arch `Qwen3_5ForConditionalGeneration` (multimodal; text-only use). Non-thinking family by design.
+> - Judge cross-check Gemma 4 31B IT: same checkpoint as subject; separate load. Self-preference rule enforced in driver (skip when Gemma 4 is the subject).
+> - **Deferred to Stage 7 Ext 9** — Llama 3.3 70B IT. Out of 64 GB budget even fp8.
+> - **Deferred to Stage 7 Ext 1** — Qwen 3.6-35B-A3B MoE.
 
 ### Eval dataset IDs
 > _Decided Stage 0._
