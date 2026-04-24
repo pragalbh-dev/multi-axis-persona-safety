@@ -158,3 +158,58 @@ Copy this block, fill in, append at the **end** of this file. Do not edit earlie
 
 **Downstream dependencies:** Stage 3 T3.1 (skips Tier 1 PCA input gen), T3.1.0 (uses paper's bf16 AA for fidelity check), T3.5 (role-vector PCA reads from paper or regenerated cache). Stage 4 T4.0 capping-layer-range config.
 
+---
+
+## [2026-04-24 21:30] Stage 0 / T0.10+dan — DAN dataset locked as primary persona-jailbreak eval set
+
+**Decision:** Use the DAN / in-the-wild persona jailbreak dataset (Shen et al., ACM CCS 2024) as the project's primary persona-jailbreak eval set, replacing the deferred Shah et al. 1,100 prompts. Sources are pinned at:
+- Personas: `TrustAIRLab/in-the-wild-jailbreak-prompts`, config `jailbreak_2023_12_25`, revision `a10aab8eff1c73165a442d4464dce192bd28b9c5` (1,405 in-the-wild persona-jailbreak prompts).
+- Questions: `TrustAIRLab/forbidden_question_set`, revision `369aa8e10ee2a26cf087fdcc34af0bb928d33d8e` (390 forbidden questions, 30 per category × 13 OpenAI-policy categories).
+
+Output sits at `data/eval/dan_jailbreak/` with `raw_personas.parquet` (1,405 rows), `raw_questions.parquet` (390 rows), `sampled_1100.parquet` (1,100 rows, 84-85 per cat — within ±1 of perfect balance), and `manifest.json` recording the revisions + seed (`42`) + per-category counts.
+
+**Alternatives considered:**
+- Shah et al. 1,100 — withheld per responsible disclosure; not locatable on HF or anywhere public; would require attacker-LLM reconstruction (which we ALSO build, see next entry, but as a secondary/comparison set rather than primary).
+- HarmBench — different taxonomy (~7 high-level categories), wouldn't slot 1:1 into our 13-cat stratification, and weaker tie to the persona-jailbreak threat model.
+
+**Reason:** DAN is (a) a real-user-sourced superset of the same threat model Shah et al. studied, (b) public license (MIT), (c) structurally identical (persona system prompt × harmful behavioral question), (d) available at ~10× the persona pool we need (1,405 vs 1,100), letting stratified sampling yield perfect category balance. Per the user's task spec it is "scientifically arguably stronger" than Shah's synthetic set.
+
+**Source:**
+- https://huggingface.co/datasets/TrustAIRLab/in-the-wild-jailbreak-prompts — verified 2026-04-24, sha `a10aab8e…`, 1,405 rows in `jailbreak_2023_12_25/train`.
+- https://huggingface.co/datasets/TrustAIRLab/forbidden_question_set — verified 2026-04-24, sha `369aa8e1…`, 390 rows, 13 cats with the labels: `Illegal Activity, Hate Speech, Malware, Physical Harm, Economic Harm, Fraud, Pornography, Political Lobbying, Privacy Violence, Legal Opinion, Financial Advice, Health Consultation, Gov Decision`.
+- Note: HF sibling listing shows the 13 category names use `Malware` (not `Malware Generation`) and `Gov Decision` (not `Government Decision`). Code uses HF's verbatim names.
+
+**Reversibility:** high. The build script (`src/data/build_dan_jailbreak.py`) is one CLI invocation; flipping seed or stratification ratios requires only re-running it.
+
+**How to revert / change:** rerun `uv run python -m src.data.build_dan_jailbreak --output-dir <path> --seed <s>`; manifest captures the new state.
+
+**Downstream dependencies:** Stage 2 T2.4 safety-eval harness reads `sampled_1100.parquet`. Stage 3-6 jailbreak experiments. Token-distribution audit (`configs/eval_sizes.yaml`) does NOT yet have an entry for this dataset — Stage 2 T2.0 should add one (audit p99 of `full_prompt` token length per subject tokenizer, set `max_input_len`).
+
+---
+
+## [2026-04-24 21:35] Stage 0 / T0.10+shah-reconstructor — Shah-style reconstruction utility scaffolded with vLLM json_schema
+
+**Decision:** Build `src/data/reconstruct_shah_jailbreaks.py` as a paper-reproduction utility that uses the already-running Gemma 4 31B vLLM service (`http://localhost:8000`, model `nvidia/Gemma-4-31B-IT-NVFP4`) as the attacker. Pipeline: (1) generator pass produces N (persona, question) JSON pairs per category constrained via `response_format={"type":"json_schema",...}`; (2) rubric filter pass scores each pair 1-5 on `on_category / adversarial / coherent / distinct`, drops mean<3.0. Categories default to the same 13 OpenAI-policy labels DAN uses (`openai13`), so reconstructed and DAN data are 1:1 comparable. Output schema (`prompt_id, persona_id, question_id, persona_text, question_text, category, full_prompt`, plus rubric metadata) matches `data/eval/dan_jailbreak/sampled_1100.parquet` so downstream eval code is dataset-agnostic.
+
+Smoke test: `--n-per-category 2 --categories openai13` produced 26 rows (2 per cat) in **5 min 4 sec** with 100% pass-rate at the rubric floor (mean rubric 4.32, min 3.75); spot-read of 3 prompts confirmed coherent persona+question pairs targeting the right harm category.
+
+**Alternatives considered:**
+- vLLM `extra_body={"guided_json": ...}` — verified working but model wrapped output in ```json fences, not strictly enforced. `response_format=json_schema` enforced cleanly with no fences, so used that path.
+- HarmBench category set — placeholder kept in code (`HARMBENCH_CATEGORIES = []`) but not used now; DAN's `openai13` is the right default for direct comparison.
+- Single-pass generation (no rubric filter) — paper's pipeline includes a quality check; matched it.
+
+**Reason:** Shah et al. methodology requires an attacker LLM. Spinning up a separate model would waste GPUs; the running Gemma 4 31B endpoint is exactly the resource the user pre-provisioned for this task. `response_format=json_schema` is more reliable than freeform-prompt JSON parsing (zero parse failures observed across 26 generation calls + 39 rubric calls in the smoke test).
+
+**Source:**
+- vLLM 0.19.1 OpenAI-compatible structured-output API: https://docs.vllm.ai/en/v0.19.1/features/structured_outputs.html (verified 2026-04-24).
+- Endpoint discovered live at `http://localhost:8000/v1/models` returning `nvidia/Gemma-4-31B-IT-NVFP4`.
+- Smoke-test artifacts: `data/eval/reconstructed_jailbreak/smoke_26/{sampled_26.parquet,manifest.json}`.
+
+**Smoke-test wall-clock estimate for full run:** 5 min 4 sec for 26 pairs (2/cat × 13 cats with 1.5x overgeneration) → ~12 sec/kept-pair end-to-end (generation + rubric). For 1,100 pairs (~85/cat): roughly **~3.5 hours** wall-clock at the same throughput, assuming the vLLM service isn't contended and the rubric pass-rate stays near 100%. If pass-rate drops with stronger overgeneration (which we'd want at scale to keep diversity), budget up to ~5 hours.
+
+**Reversibility:** high. The utility is a CLI; users can rerun with different `--n-per-category`, `--seed`, `--categories`, or `--overgenerate-factor` without touching code.
+
+**How to revert / change:** rerun the CLI with new args. Code lives in `src/data/reconstruct_shah_jailbreaks.py`.
+
+**Downstream dependencies:** Optional secondary eval set for Stage 4-6 (lets us sanity-check that DAN-vs-Shah-style results agree). NOT a Stage 0 critical-path artifact — DAN primary set fills the same role. Full-scale run is deferred to user (multi-hour, ran out-of-band).
+
