@@ -35,3 +35,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# External repos cloned for reference (Stage 0 T0.7)
+external/
