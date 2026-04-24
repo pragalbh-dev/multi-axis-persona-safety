@@ -70,8 +70,10 @@ No prior stage. You are the first.
   - Same via nnsight
   - Document which backend works per model (nnsight for MoE likely)
   - Record exact hook-point name for "post-MLP residual stream at layer L" per model family (Gemma / Qwen / Llama / MoE) in `configs/model_hooks.yaml`
+  - **Reasoning tokens (Gemma 4 31B thinking ON):** capture the exact hook point + token mask for extracting activations *during thinking tokens* AND *during answer tokens* separately. Document in `configs/model_hooks.yaml`. This is required for Stage 3's dual-mode extraction.
+  - **lmsys-chat-1m norm reference:** for each Tier 1 + Tier 2 model, compute the average post-MLP residual stream norm at each layer on a sample from lmsys-chat-1m (paper uses n=18,777). Save to `data/cache/lmsys_norms/<model>.parquet`. Used later to scale steering vectors and random baselines per the paper's convention.
 
-- [ ] **T0.7: Clone and audit starting codebases**
+- [ ] **T0.7: Clone and audit starting codebases + pull paper's extraction-pipeline artifacts**
   - Clone `github.com/safety-research/assistant-axis`, `github.com/safety-research/persona_vectors`
   - Run their example notebooks / smoke tests
   - Audit and document in the Handoff:
@@ -79,6 +81,12 @@ No prior stage. You are the first.
     - What needs adapting (e.g., hard-coded model names)
     - What's missing — does either repo have: batched judge eval harness? multi-axis steering? capability eval integration? Note for Stage 2 agent.
   - Download pre-computed persona axes for Tier 1 models from HuggingFace.
+  - **Also pull from assistant-axis repo (needed for Stage 3 Tier 2 extraction):**
+    - **240 extraction questions** — the diverse prompts used to elicit role-expressing responses. Save to `data/paper_artifacts/extraction_questions.json`.
+    - **5 default-Assistant system-prompt variants** (e.g., "You are a large language model", "Respond as yourself", + 3 others + the empty-system-prompt case). Save to `data/paper_artifacts/default_assistant_system_prompts.json`.
+    - **Role-expression judge prompt template** (paper Appendix A, 3-label rubric). Save to `configs/role_expression_prompt.yaml`.
+    - **Per-model rollouts / projection distributions IF released.** Check: does the HF release include the raw rollouts or the projection-distribution files for the Tier 1 models? If yes → cache them and skip Tier 1 rollout regeneration in Stage 3. If no → note in Handoff that Stage 3 T3.1 must regenerate rollouts for Tier 1 to populate the τ-calibration distribution.
+    - **Per-model PC1 capping layer ranges** (paper Figure 10 / Appendix F for Llama + Qwen, Appendix for Gemma 2 27B). Save to `configs/paper_capping_ranges.yaml` so Stage 4 T4.0 can load Tier 1 configs without re-sweeping.
 
 - [ ] **T0.8: Set up primary judge as a batch-processing step (Qwen 3.6-27B dense)**
   - **Not a persistent server.** Build a script that (a) loads the judge on all 4 GPUs, (b) streams a parquet of `(prompt, response)` rows through it in batches, (c) writes back labels + parses, (d) tears down.
@@ -92,9 +100,12 @@ No prior stage. You are the first.
   - Use the same batch-processing script, swap model weights to Gemma 4 31B-it.
   - Thinking OFF default.
   - Test against the same 1,000-row synthetic input. Verify parseable labels.
-  - Optional sanity check: thinking ON vs OFF on ~30 ambiguous prompts — if ON materially changes labels, flag for Stage 2 judge-prompt design.
-  - **Self-preference rule:** when Gemma 4 31B-it is the *subject* of an experiment, the orchestration script must skip the Gemma-as-judge pass on those prompts. Enforce this in the judge driver, not in manual discipline.
-  - **Exception path (keep for later):** if a subject model is small enough to leave ≥2 GPUs free during its phase (e.g., Gemma 2 27B bf16 on 2 GPUs), a co-located judge endpoint is allowed as an optimization. Not the default — document the optimization path but don't build an always-on server in Stage 0.
+  - Optional sanity check: thinking ON vs OFF on ~30 ambiguous prompts.
+  - **Self-preference rule:** when Gemma 4 31B-it is the *subject* of an experiment, the orchestration script must skip the Gemma-as-judge pass on those prompts. Enforce this in the judge driver.
+
+  **Exception path** (keep for later): if a subject model is small enough to leave ≥2 GPUs free during its phase (e.g., Gemma 2 27B bf16 on 2 GPUs), a co-located judge endpoint is allowed as an optimization. Not the default.
+
+  **Note:** the 200-sample judge validation against GPT-5.5 is deferred to **Stage 2 T2.4.5**, not Stage 0 — it needs the downloaded datasets (T0.10), a running subject model, and the finalized judge prompt (Stage 2 T2.0) to generate the labeled set. Stage 0 only installs and smoke-tests the judge infrastructure.
 
 - [ ] **T0.10: Download evaluation datasets**
   - Shah et al. persona-based jailbreak (1,100 prompts) — find the canonical source; assistant-axis repo may point to it

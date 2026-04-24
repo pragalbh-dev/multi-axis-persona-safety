@@ -21,20 +21,26 @@
 ## Tasks
 
 - [ ] T6.1: Implement multi-axis capping
-  - Extend the single-axis capping formula to N simultaneous PCs
-  - For each PC i: `h ← h - v_i * min(⟨h,v_i⟩ - τ_i, 0)` applied sequentially
-  - Configurations to test:
-    - PC1 only (baseline — reproduce paper result)
-    - PC1 + PC2
-    - PC1 + PC2 + PC3
-    - PC1 + all safety-relevant PCs (from Exp 2 LASSO selection)
-  - Verify: capping order doesn't matter (directions are orthogonal, so it shouldn't)
+  - Extend the single-axis capping formula to N simultaneous directions
+  - For each direction `d` in the config: `h ← h − d · min(⟨h, d⟩ − τ_d, 0)` applied sequentially at every layer in the capping range and at every token position (per CONVENTIONS)
+  - **Configurations to test** (baseline is Assistant Axis, NOT PC1 — per CONVENTIONS + paper §3.1 line ~468):
+    - **AA only** (baseline — reproduces paper's result; read τ + layer range from `configs/aa_capping.yaml` written by Stage 4 T4.0)
+    - AA + PC2
+    - AA + PC2 + PC3
+    - AA + all primary safety-relevant PCs (LASSO-nonzero set from Stage 3 T3.8)
+  - **Verify AA/PC near-orthogonality at every capping layer (NOT just the extraction center):** AA is defined per-layer; PCs are computed at L* only. At each layer L in the capping range, compute pairwise cos_sim of `{AA_L, PC2_L, PC3_L, ...}` using the per-layer AA cache (T3.1) + per-layer PC directions (T3.1.5). Expect AA ≈ PC1 direction at L* (cos_sim > 0.71), so AA should have low cos_sim with PC2+ (bounded below ~0.7 by orthogonality of PCs). If any pair of DISTINCT axes in the capping config (e.g., AA × PC2) exceeds 0.1 at any capping layer: order-independence fails → switch to deterministic **fixed order = AA → PC2 → PC3 → rest of LASSO set** and document. Record the per-layer `{axis_pair: cos_sim}` matrix to `results/exp6_multi_axis_defense/orthogonality_check.json`.
 
-- [ ] T6.2: Calibrate thresholds per PC
-  - For each PC independently: sweep τ ∈ {1st, 10th, 25th, 50th, 75th percentile}
-  - For multi-axis: also test cross-combinations (e.g., PC1 at 25th + PC2 at 10th)
-  - Use held-out validation set (split 1,100 prompts: 550 val / 550 test)
-  - Select optimal τ per PC on validation set
+- [ ] T6.2: Calibrate thresholds + layer range per PC (2-phase, conditional second phase)
+  - **Per-direction (capping layer range, τ) calibration — paper's 2D sweep per added axis:**
+    - **AA uses the already-calibrated config from Stage 4 T4.0** (`configs/aa_capping.yaml`). Do not redo.
+    - For each additional PC (PC2, PC3, and any LASSO-selected PCs from Stage 3 T3.8): paper did not test multi-axis capping, so we calibrate each PC's (layer range, τ) ourselves.
+      - **Tier 1:** as a compute-saving default, assume each additional PC's optimal capping layer range matches AA's (paper's Qwen 46-53, Llama 56-71, Gemma 2 from Appendix F); sweep τ only. If Phase A shows the per-PC optimal τ fails to add Pareto gain, fall back to a Tier-2-style 2D sweep for that PC as a debug path.
+      - **Tier 2 (Gemma 4 31B both modes):** run the same (center × width × τ percentile) grid as Stage 4 T4.0 for each added PC on a 200-prompt safety × capability subsample. Centers ∈ {40%, 50%, 60%, 70%, 80% depth}, widths ∈ {4, 8, 16, 24}, τ percentiles ∈ {1st, 10th, 25th, 50th, 75th}.
+    - **Training data:** held-out 550-prompt validation split of the 1,100 (other 550 reserved for test).
+  - **Phase A (always run) — 4 multi-axis configurations:** `{AA}`, `{AA+PC2}`, `{AA+PC2+PC3}`, `{AA + all primary safety-relevant PCs from Stage 3 T3.8 LASSO}`. Each direction uses its own optimal (layer_range, τ) from the calibration above.
+  - **Phase B (conditional, only if Phase A shows ≥10% additive gain):** full cross-percentile sweep over τ (keep layer ranges locked at per-direction optima). 5 percentiles × k axes = 5^k configs — worth running only if Phase A demonstrates meaningful multi-axis benefit. Cap at 3 axes (AA + 2 PCs → 5^3 = 125 configs) even if Phase A shows more PCs are safety-relevant.
+  - **Decision rule for Phase B:** proceed only if `ASR(AA+PC2) ≤ 0.9 × ASR(AA only)` on validation. Otherwise stop at Phase A and report "per-direction optimal percentile is sufficient; cross-percentile tuning gives no further gain."
+  - Select final config on validation set; evaluate on held-out test set.
 
 - [ ] T6.3: Full evaluation of each defense configuration
   - For each (capping config × model): run full safety eval (550 test prompts) + full capability eval

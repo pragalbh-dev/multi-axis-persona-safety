@@ -20,57 +20,65 @@
 
 ---
 
-## Extension priority (from scope doc)
+## Extension priority (from scope doc, revised 2026-04-24)
+
+Gemma 4 31B dense (both thinking modes) was **promoted into Stages 3/4/6** as a core subject. What remains in Extensions is the MoE case and deeper reasoning analysis that doesn't fit the core run.
 
 | Rank | Extension | Effort | Value | Status |
 |------|-----------|--------|-------|--------|
-| 1 | New models (Gemma 4, Qwen 3.6) | Medium | High | pending |
-| 2 | Reasoning model analysis | Low-Medium | Medium-High | pending |
+| 1 | Qwen 3.6-35B-A3B MoE — full pipeline | Medium-High | Medium | pending |
+| 2 | Reasoning deep-dive (thinking vs answer subspace geometry) | Low | Medium-High | pending |
 | 3 | Improved persona elicitation | Medium | High | pending |
 | 4 | Decorrelated persona subset | Low | Medium | pending |
-| 5 | MoE-specific analysis | Medium-High | Medium | pending |
+| 5 | Per-expert MoE router analysis | Medium-High | Medium | pending |
 | 6 | SAE feature mapping | Medium | Medium | pending |
 | 7 | Trait-persona decomposition | Low | Medium | pending |
+| 8 | Variable α, β composition fit (revisit Stage 5) | Low | Low | pending |
 
 ---
 
-## Ext 1: New Models
+## Ext 1: MoE (Qwen 3.6-35B-A3B) — full pipeline
+
+**Why extension and not core:** Gemma 4 31B dense is in core stages. MoE needs nnsight-backed hooks for clean residual-stream extraction across the expert-routing layer, plus optional per-expert analysis (Ext 5). The tooling work gates the run.
 
 ### Tasks
 
-- [ ] T7.1: Load Tier 2 models
-  - Gemma 4 31B IT — verify loads via TransformerLens or nnsight
-  - Qwen 3.6-35B-A3B — verify MoE model loads, identify hook points for residual stream
-  - Document: VRAM, parallelism strategy, any compatibility issues
+- [ ] T7.1: MoE extraction harness
+  - Verify nnsight can hook the post-routing residual stream on Qwen 3.6-35B-A3B. Residual stream after MoE block aggregates experts into one vector — standard extraction works here.
+  - Decide: also cache per-expert contribution (gate logit × expert output) for Ext 5? If yes, schema change in `data/cache/activations/` (add `expert_id` dimension).
+  - Document in `configs/model_hooks.yaml`.
 
-- [ ] T7.2: Extract persona vectors for Tier 2
-  - Run the assistant-axis pipeline on Gemma 4 and Qwen 3.6 (no pre-computed axes exist)
-  - 275 roles × 1,200 rollouts each = 330K rollouts per model
-  - Save role vectors to `data/tier2_role_vectors/`
+- [ ] T7.2: Extract persona vectors for MoE
+  - 275 roles × **300 rollouts each** (reduced from paper's 1,200 — same cut we applied in Stage 3 for Gemma 4 dense). Pipeline is the same as assistant-axis extraction, filter via primary judge.
+  - Thinking mode ON + OFF (same as Gemma 4 dense), extract thinking and answer tokens separately.
+  - Save to `data/cache/activations/qwen3.6-35b-a3b-moe/`.
 
-- [ ] T7.3: Run Exps 1-6 on Tier 2 models
-  - Reuse all experiment scripts with new model configs
-  - Compare results to Tier 1: do findings generalize to newer architectures?
-  - Add Tier 2 results to report as extension section or appendix
+- [ ] T7.3: Run Exps 1-6 on MoE
+  - Reuse all experiment scripts with the MoE subject config.
+  - Compare to Tier 1 + Gemma 4 dense from core stages: does MoE persona space differ? Is the Assistant Axis still PC1? Does capping transfer?
+  - Add MoE results as a dedicated section in the report (paper's §8.1 explicitly names MoE as a gap — this is a first-class contribution).
 
 ---
 
-## Ext 2: Reasoning Model Analysis
+## Ext 2: Reasoning deep-dive (thinking vs answer subspace geometry)
+
+**Why extension:** Core Stage 3 already extracts activations from thinking and answer tokens separately for Gemma 4 31B dense in thinking-ON mode. That gives two PCA spaces. Ext 2 is the **deep comparison** between them — the geometry questions beyond "is the Assistant Axis still PC1 in both?"
 
 ### Tasks
 
-- [ ] T7.4: Set up reasoning ablation
-  - Qwen 3 32B with thinking mode enabled vs disabled
-  - Define: extract activations during thinking tokens, answer tokens, or both
+- [ ] T7.4: Subspace alignment analysis
+  - Compute Grassmann / principal angles between the top-k subspaces of thinking-token PCA and answer-token PCA on Gemma 4 31B thinking-ON.
+  - Question: is the persona subspace the same geometric object when the model is thinking vs answering?
 
-- [ ] T7.5: Compare persona spaces
-  - Run PCA on thinking-enabled and thinking-disabled separately
-  - Compare: eigenspectrum, PC interpretations, cross-mode PC similarity
-  - Question: does the thinking phase show different persona structure?
+- [ ] T7.5: Drift of Assistant Axis across thinking tokens
+  - Project activations at every thinking token (not just mean) onto the Assistant Axis.
+  - Does the projection wander during thinking and re-anchor at the answer, or stay stable?
+  - If it wanders: implication for reasoning-model safety — the thinking phase may cross persona boundaries that the answer doesn't expose.
 
-- [ ] T7.6: Safety eval on reasoning model
-  - Run Exp 2-4 equivalent on thinking-enabled Qwen 3
-  - Compare: are the same PCs safety-relevant? Is the blind spot fraction different?
+- [ ] T7.6: Safety correlation in thinking space
+  - Run Stage 3 Exp 2 equivalent using thinking-token activations as input features.
+  - Are the same PCs safety-relevant, or does thinking carry distinct safety signal?
+  - Blind spot lift computed separately for thinking vs answer subspaces.
 
 ---
 
@@ -154,8 +162,19 @@
 
 ---
 
+## Ext 8: Variable α, β composition fit (revisit Stage 5)
+
+### Tasks
+
+- [ ] T7.18: Per-pair α, β fit
+  - For each persona pair from Stage 5: fit (α, β) ∈ [0,1]² minimizing L2 residual between predicted and empirical composition.
+  - Compare: fitted-α,β residuals vs locked-0.5,0.5 residuals. Is the linearity story preserved under free coefficients, or do complementary pairs need asymmetric weights?
+  - Low priority — mostly a sensitivity check on Stage 5's primary result.
+
+---
+
 ## Notes
 
 - Extensions are strictly ordered by priority. Don't start Ext 2 before Ext 1 is done (unless GPU-idle time makes it efficient).
 - Each extension should add a section or appendix to the report, not modify existing core sections.
-- Time constraint: fellowship deadline May 3. Extensions beyond Ext 2-3 are likely post-deadline.
+- Time constraint: fellowship deadline May 3, 2026. Extensions beyond Ext 2 are likely post-deadline.

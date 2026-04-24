@@ -63,6 +63,11 @@
   - Create `report/blog.md` with a simpler structure
   - Define figure numbering: Fig 1 = Persona Space 3D, Fig 2 = Safety Heatmap, etc.
 
+- [ ] T1.6.5: Lock the shared experiment config schema (promoted from Stage 2)
+  - Create `configs/experiment_template.yaml` covering fields every experiment needs: `seed`, `model_id`, `extraction_layer` (null until Stage 3 T3.1 fills in per model), `hook_point`, `token_aggregation` (default: "mean_response_tokens"), `max_input_len`, `max_output_len`, `batch_size`, `tensor_parallel`, `data_parallel`, `judge_primary_id`, `judge_crosscheck_id`, `crosscheck_subset_size`, `judge_prompt_path` (default: `configs/judge_prompt.yaml`), `output_dir`, `resume_from_manifest`, `fresh`.
+  - Add a pydantic / dataclass validator for this schema in `src/utils/config.py` so every experiment loads configs through one code path.
+  - Document in `CONVENTIONS.md` "Config schema per experiment".
+
 - [ ] T1.7: Design the interactive demo data schema
   - Define the precomputed output tuple: `(model, steering_mode, strength, defense_config, prompt_id, response_text, pc_projections, safety_score, capability_score)`
   - Storage format: parquet file(s) in `dashboard/data/`

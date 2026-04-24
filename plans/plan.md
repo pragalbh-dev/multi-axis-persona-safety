@@ -8,8 +8,9 @@ If you're a new agent picking up this project:
 2. Read this file — stage overview, see where we are
 3. Read `CONVENTIONS.md` — locked tooling/style decisions + log of in-flight decisions
 4. Read `progress.md` — what's been done, plus the latest **Handoff block** for your stage
-5. Read the active stage plan (linked from the table below). Start with the "Required inputs" section at the top.
-6. If you need research context: read `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
+5. Read `decisions.md` — unplanned decisions made by earlier agents that may affect your work
+6. Read the active stage plan (linked from the table below). Start with the "Required inputs" section at the top.
+7. If you need research context: read `~/obsidian-vault/wiki/syntheses/multi-axis-persona-safety-scope.md`
 
 Do NOT read the full scope doc unless you specifically need research context (hypotheses, positioning, methodology details). The CLAUDE.md has all the operational decisions.
 
@@ -37,6 +38,27 @@ This is the mechanism for a fresh agent (after context reset) to pick up without
 
 ---
 
+## Unplanned-decision logging (mandatory)
+
+If you make a decision during stage execution that was NOT in the pre-planned stage doc, **log it to `decisions.md`** using the template at the top of that file. This is separate from `progress.md` (which tracks work done) and from `CONVENTIONS.md` (which tracks policy, not execution decisions).
+
+**When to log:**
+- Picking a concrete integer / hyperparameter when the plan said "somewhere around X" (e.g., extraction layer argmax came in at L30 instead of paper's L32).
+- Resolving an ambiguity in the paper when the plan didn't specify.
+- Picking between viable library versions or implementations the plan didn't name.
+- Taking a scope cut under time or compute pressure.
+- Any choice you'd want a future agent (or the user) to be able to audit or reverse.
+
+**When NOT to log:**
+- Task completion (use the stage plan checkboxes + `progress.md`).
+- Anything already in `CONVENTIONS.md` or a stage plan — that's pre-planned, not an unplanned decision.
+
+**Template:** copy from the top of `decisions.md` — requires Decision, Alternatives considered, Reason, Source (paper line / file / URL / user instruction / own judgment), Reversibility (high/medium/low), How to revert, Downstream dependencies.
+
+Why this protocol matters: experiments depend on each other. A small choice in Stage 3 (e.g., "I picked L31 instead of L32 because cos_sim was marginally higher") may show up as an anomaly in Stage 5 and we need to trace it back. Without the log, "this result looks off" is unanswerable.
+
+---
+
 ## Project Summary
 
 We extend the Assistant Axis paper to study persona space beyond PC1. Four sub-questions: structure (how many PCs matter), safety (do orthogonal PCs carry safety info), geometry (linear vs manifold), defense (does multi-axis capping help). Six core experiments, 5 analytical visualizations + 1 interactive demo, paper + blog post.
@@ -60,6 +82,8 @@ We extend the Assistant Axis paper to study persona space beyond PC1. Four sub-q
 | 8 | Presentation & dissemination | [stage-8-presentation.md](stage-8-presentation.md) | pending | 8 | 0 | Stages 3-6 |
 
 **Note:** Stages 4 and 5 can run in parallel (different GPU workloads, no dependency between them). (Only if we have enough GPUs)
+
+**Subjects across Stages 3/4/6:** Tier 1 (Gemma 2 27B, Qwen 3 32B thinking OFF, Llama 3.3 70B) + **Gemma 4 31B dense** in both thinking ON and OFF modes = 5 subjects. Gemma 4 31B was promoted from extension to core because it fills the paper's frontier+reasoning gap (§8.1) without extra tooling. MoE (Qwen 3.6-35B-A3B) stays in Stage 7 Ext 1 because it needs nnsight-backed per-expert extraction tooling.
 
 ---
 

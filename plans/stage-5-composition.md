@@ -35,10 +35,10 @@
   - Save to `data/compositions/`
 
 - [ ] T5.3: Test linearity of composition
-  - For each pair: compute predicted = α·v_A + β·v_B + (1-α-β)·v_mean (centered)
-  - Compare to empirical = actual mean activation from T5.2
-  - Metrics: cosine similarity, L2 residual norm, per-PC projection comparison
-  - Aggregate: overall linearity R² (cosine sim averaged across pairs)
+  - **Primary test (locked α=β=0.5):** predicted = 0.5·v_A + 0.5·v_B. Compare to empirical = actual mean activation from T5.2.
+  - Metrics: cosine similarity, L2 residual norm, per-PC projection comparison.
+  - Aggregate: overall linearity score (mean cosine similarity across pairs) + per-category breakdown (complementary / contradictory / neutral).
+  - Fitted α, β coefficients are deferred to **Stage 7 Ext (analysis extension)** — fitting per-pair α, β inflates R² and complicates interpretation. Keep primary test clean.
   - Breakdown by category: are complementary, contradictory, or neutral pairs more/less linear?
 
 - [ ] T5.4: Analyze interaction effects

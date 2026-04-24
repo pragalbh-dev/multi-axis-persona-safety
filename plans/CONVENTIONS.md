@@ -32,7 +32,8 @@ The plan is not meant to be 100% gapless — some decisions are made on the go. 
 - Log the seed in `manifest.json` for every result directory.
 
 ### Data & results layout
-- **Cached activations:** parquet in `data/cache/activations/`. One file per (model, dataset, layer) triple. Schema logged to `CONVENTIONS.md` when first written (see "Decide and log" below).
+- **Cached activations:** **safetensors** in `data/cache/activations/`. One file per (model, dataset, layer) triple, plus a sibling `.meta.json` with shape, dtype, token-aggregation rule ("mean across response tokens"), seed, git SHA. Parquet is wrong for tensor caches — use safetensors (HuggingFace-native, mmap-friendly). Parquet is for **result tuples** (see below) and small tabular data.
+- **Result tuples:** parquet (one row per prompt × condition). See `details.parquet` schema in results layout.
 - **Results:** `results/exp{N}_{name}/`. Must contain:
   - `config.yaml` — the full config this experiment ran with
   - `manifest.json` — schema pointers, seed, git SHA, start/end time, artifacts list
@@ -64,6 +65,45 @@ The plan is not meant to be 100% gapless — some decisions are made on the go. 
 - Every stage ends by appending a **Handoff block** to `progress.md` (template lives at top of `progress.md`).
 - Every stage plan's "Required inputs" section points at the prior stage's Handoff.
 - A fresh agent opens `progress.md`, reads the latest Handoff for its stage, and has what it needs.
+
+### Unplanned-decision logging (mandatory)
+Any choice made during stage execution that was NOT in the pre-written stage plan must be appended as a new entry to `plans/decisions.md` using the template at the top of that file. Each entry includes: decision, alternatives considered, reason, source (paper line / file path / URL / user instruction / own judgment), reversibility (high/medium/low), how to revert, downstream dependencies.
+- **Separation of concerns:** `progress.md` = what work happened; `decisions.md` = what choices were made mid-flight; `CONVENTIONS.md` = what policy was decided in advance; stage plans = what tasks to do.
+- **Why it's mandatory:** downstream experiments build on upstream choices. When a later stage produces a surprising result, the first place to look is `decisions.md` — what was chosen when the plan was ambiguous? Without the log, debugging cascading anomalies becomes guesswork.
+- **Triggers:** picking a concrete value when the plan says "around X" (e.g., argmax-cos_sim extraction layer lands at L30 vs paper's L32), resolving a paper ambiguity not covered in the plan, library-version / implementation choices the plan didn't name, scope cuts under pressure, anything a future agent might want to audit or reverse.
+
+### Scientific conventions (locked from paper cross-check)
+
+These are derived directly from Lu et al. 2601.10387 via line-by-line check of the extracted paper (`~/obsidian-vault/raw/papers/assistant-axis/extracted.md`). Do not deviate without user sign-off.
+
+- **Layer selection for extraction and steering:** run PCA on role vectors at every layer; pick the layer with max cos_sim(PC1, Assistant contrast vector) per model. Paper reports this >0.71 at the middle layer (lines 450, 3426). Do not hardcode "middle layer" — compute it.
+- **Activation aggregation:** mean over **all response tokens** at the post-MLP residual stream at the selected middle layer (line 96). Not last token, not first-N, not prompt tokens.
+- **Steering-vector norm convention:** scale any steering vector (including random baselines) to the **average post-MLP residual stream norm measured on lmsys-chat-1m at the target layer** (line 474).
+- **Capping formula** (paper §5): `h ← h − v · min(⟨h, v⟩ − τ, 0)` applied at multiple layers simultaneously, at all token positions (line 676, line 727). For multi-axis: apply per-PC caps sequentially in the same hook; since our added PCs (PC2+) are orthogonal to PC1 by construction, capping order within a layer is irrelevant.
+- **Default cap percentile:** 25th percentile of projections from role rollouts at that layer. Paper found this was approximately the mean Assistant response projection (line 685).
+- **Judge prompt:** use the paper's verbatim prompt from Appendix D.2.2 (9 categories). Store in `configs/judge_prompt.yaml`. Binarize `enough_info` + `enough_info_and_follow_perfectly` → harm=1, rest → harm=0.
+- **Effect-size thresholds:** Cohen's d — medium = 0.5, large = 0.8 (Cohen 1988). Paper doesn't set thresholds; we add these.
+- **Random baseline count:** 5 random unit vectors per target PC, each scaled per the norm convention above.
+- **Correlation test choice:** per-prompt binary harm × continuous PC projection → **point-biserial**. Aggregate-rate × continuous projection (paper's r=0.39-0.52 framing) → **Pearson**.
+- **Joint safety prediction:** **logistic LASSO** (binomial, L1), nested 10-fold CV, quality metric ROC-AUC.
+- **Blind spot definition:** `AUC(PCs 1..k logistic-LASSO) − AUC(PC1-only logistic)` with bootstrap BCa CI on the delta.
+- **Role vector count per model:** n = number of fully-X and somewhat-X role vectors passing the paper's ≥10-responses-per-category filter (paper line 96). Expect **300-500 per model, NOT 275** (275 = # roles; each role produces up to two vectors after the fully/somewhat split). Use actual per-model n when computing MP threshold γ = d/n. Log n in each model's PCA manifest.
+- **Layer-scope convention — steering vs capping are different:**
+  - **Extraction layer (single):** the middle residual stream layer of each model, validated by cos_sim(PC1, Assistant Axis contrast) > 0.71 via a per-layer sweep (paper line 96, 3426). Used for PCA + role vectors + Assistant Axis + per-prompt projections.
+  - **Steering layer (single):** same as extraction layer (paper line 474, 3438). Our Stage 4 orthogonal-steering experiments follow this convention: steer at the single extraction layer unless the Stage 4 T4.3 layer sweep justifies otherwise.
+  - **Capping layer range (multi-layer):** applied at an adjacent range of layers. Paper's convention (line 691): capping is NOT a single layer, and the range center is NOT tied to the extraction layer — it is determined by an **independent 2D sweep** over (center × width) × τ percentile. Paper's sweep grid: centers spaced 2 apart (Qwen) or 4 apart (Llama) across the "middle to late" depth band, widths {4, 8, 16} (Qwen) / {8, 16, 24} (Llama), τ percentiles {1st, 25th, 50th, 75th}. Pick by Pareto (harm × capability). Paper's optima are deeper than extraction: Qwen 3 32B capping at layers 46-53 (center 49.5, width 8) vs extraction middle ≈ 32; Llama 3.3 70B capping at 56-71 (center 63.5, width 16) vs extraction middle ≈ 40. **For Tier 1 use paper's reported capping ranges verbatim; for Tier 2 run the 2D sweep over centers ∈ {40%, 50%, 60%, 70%, 80% depth} × widths ∈ {4, 8, 16, 24} × τ percentiles, pick Pareto-best.**
+- **τ-calibration distribution:** projections of **per-rollout mean-response-token activations** (same cache used to compute role vectors) onto the target PC at the target capping layer. Across 5 default-Assistant system-prompt variants + 275 roles × rollout count (300/role for our runs), ~300-450K samples per model — produced as a byproduct of Stage 3 T3.1 extraction, no separate pipeline. τ ∈ {1st, 10th, 25th, 50th, 75th percentile} of this distribution. Default = 25th percentile (paper line 685).
+- **Steering + capping token scope:** apply at **every token position** (prompt + response), unless explicitly scoped (paper line 474 + 697). The thinking-tokens-only vs answer-tokens-only split is reserved for Gemma 4 31B thinking-ON experiments in Stage 3 dual-mode extraction.
+- **PC pooling across models:** pool PC steering/correlation results across models only if pairwise cross-model cos_sim > 0.7. Otherwise report per-model — do not average. Paper line 294: PC2 Qwen↔Llama ≈ 0.89 (pool), Gemma PC2 < 0.61 (don't pool Gemma); PC3 Qwen↔Llama ≈ 0.56 (don't pool), Gemma PC3 ⊥ others (per-model). Lock per-PC decisions in `configs/pc_pooling.yaml` at Stage 3 T3.3.
+- **Judge roles — one model, two prompts:** Qwen 3.6-27B serves as (a) **harm judge** — 9-category prompt from paper Appendix D.2.2 → `configs/judge_prompt.yaml`, used in every safety eval; (b) **role-expression judge** — 3-label prompt (`fully / somewhat / no role-playing`) from paper Appendix A → `configs/role_expression_prompt.yaml`, used ONLY during Tier 2 role-vector extraction (Stage 3 T3.1). Different invocations, different prompts, same model weights. No separate judge model for role expression.
+- **Safety-relevant PC definition (locked for Stage 4 handoff):** **primary set** = PCs with LASSO-nonzero coefficient in the binary logistic joint model (Stage 3 T3.8). **Secondary candidates** = PCs with FDR-significant point-biserial (q=0.05) AND Cohen's d ≥ 0.5. Stage 4 T4.1 consumes the primary set; secondary is reported separately for Stage 7 Ext 3 follow-up.
+- **Primary intervention direction — Assistant Axis (AA) contrast vector, NOT PC1** (paper §3.1 line ~468 + Appendix G). Paper explicitly: "we perform our experiments with this contrast vector as the Assistant Axis and compare results with using PC1 (Appendix G)... We recommend the contrast vector method for reproducing our results in different models because it is not guaranteed that PC1 in every model will correspond to an Assistant Axis."
+  - **Definition per subject per layer L:** `AA_L = mean(default_Assistant mean-response-token activations at L) − mean(fully role-playing role vectors at L)`. L2-normalize. Scale to lmsys-chat-1m norm for interventions (per existing steering-norm convention).
+  - **H1-H4 operational framing:** use AA as the baseline "PC1-analog" direction throughout — Stage 4 T4.0 capping calibration, T4.5 capped + orthogonal steering, T4.6 adversarial null-space, Stage 6 T6.1/T6.2 multi-axis defense baseline. "Higher PCs" (PC2, PC3, ...) remain role-space PCA components; they are orthogonal to PC1 by construction and ≈orthogonal to AA in practice since cos_sim(PC1, AA) > 0.71 at L*.
+  - **Per-subject PC1 ≈ AA validation:** Stage 3 T3.1.5 computes cos_sim(PC1 at L*, AA at L*). Expect >0.71 (paper threshold). If <0.7 for any subject (plausible for Gemma 4 31B thinking ON or MoE), that subject's secondary PC1-based analysis is dropped — only AA-based results reported — and the divergence is logged to `decisions.md`.
+  - **LASSO features (Stage 3 T3.8):** projections onto `{AA, PC2, PC3, ..., PCk}`. Drop PC1 as redundant with AA. "Safety-relevant PC" = LASSO-nonzero among PCs 2..k only (AA is the always-on baseline). Blind spot lift = `AUC(AA + LASSO-selected PCs 2..k) − AUC(AA only)` with bootstrap BCa CI.
+  - **Adversarial direction (Stage 4 T4.6):** `u_adv = Σ_{i≥2} c_i · PC_i` (from the LASSO fit above), then **explicitly project AA out**: `u_adv ← u_adv − (⟨u_adv, AA⟩ / ||AA||²) · AA`. Needed because PCs 2..k are orthogonal to PC1 but not strictly to AA. L2-normalize, scale to lmsys-chat-1m norm.
+  - **Stage 5 composition is unaffected** — composition is about role-vector arithmetic in the d_model activation space, independent of the AA vs PC1 choice.
 
 ---
 
@@ -98,8 +138,8 @@ These aren't locked — the agent running the relevant stage decides. But once d
 ### Judge prompt template
 > _Decided Stage 2 when safety eval harness implemented. Record: exact prompt, parsing rules, label set (e.g., harmful/refusal/ambiguous), and agreement rule (when to use cross-check judge)._
 
-### Activation cache parquet schema
-> _Decided Stage 2 when extraction harness implemented. Record: columns, dtypes, compression, chunking._
+### Activation cache safetensors schema
+> _Decided Stage 2 when extraction harness implemented. Record: tensor dtype (bf16 / fp16 / fp32 tradeoff), shape convention (n_prompts × n_layers × d_model OR one file per layer), metadata fields in sibling `.meta.json`._
 
 ### Max input/output lengths per task
 > _Decided Stage 0 after token-distribution audit._
