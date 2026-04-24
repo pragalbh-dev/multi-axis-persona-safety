@@ -59,7 +59,8 @@ qwen_3_6_27b:
   attention_backend: null
   enforce_eager: true                   # skip CUDA graph capture (saves ~2 GB)
   max_model_len: 1024
-  chat_template_kwargs: {}
+  chat_template_kwargs:
+    enable_thinking: false              # Stage 0 discovered Qwen 3.6 defaults to thinking ON; disable for judge
   notes: |
     Official Qwen fp8, released 2026-04-22, last modified 2026-04-24.
     Qwen3_5ForConditionalGeneration multimodal architecture; text-only use.

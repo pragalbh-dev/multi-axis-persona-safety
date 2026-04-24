@@ -1,0 +1,87 @@
+# Extraction hook-point conventions per model family.
+#
+# Stage 0 T0.6 writes this based on HF architecture introspection + known
+# TransformerLens / nnsight conventions. Actual hook verification (running
+# an empirical forward pass and grabbing the residual stream) happens in
+# Stage 3 T3.1 when the real extraction harness is built — it gates
+# extraction, fails loudly if the hook path doesn't exist.
+#
+# Why not verify empirically in Stage 0:
+#   - TransformerLens + nnsight load bf16 weights natively; the fp8 checkpoints
+#     used by vLLM (our inference path) are not compatible with those backends.
+#   - bf16 27-31B models won't fit on our 2x 5090 (64 GB) budget at all, let
+#     alone with a KV cache.
+#   - Stage 3 T3.1 solves this by using vLLM's extraction hook API (or nnsight
+#     on a quant-friendly build) and validating in-situ.
+#
+# Paper's aggregation convention (CONVENTIONS "Scientific conventions"):
+#   - extract at POST-MLP residual stream
+#   - aggregate = MEAN over all response tokens
+#   - extraction layer L* = argmax_L cos_sim(PC1_L, AssistantAxis_L) via per-
+#     layer sweep; paper empirical value is ~middle layer
+#
+# For Gemma 4 thinking ON: split response tokens into thinking-span vs
+# answer-span using the reasoning delimiter tokens. The mask is produced
+# empirically in Stage 3 T3.1 (requires a live run).
+
+gemma_2:
+  hf_architectures: [Gemma2ForCausalLM]
+  n_layers: 46
+  d_model: 4608
+  preferred_backend: transformer_lens
+  tl_hook_post_mlp_resid: "blocks.{L}.hook_resid_post"    # TL standard
+  nnsight_post_mlp_resid: "model.layers[{L}].output"      # HF modules; output tuple [0]
+  notes: |
+    Standard Gemma 2 arch. TL has first-party support via gemma-2-27b-it base.
+    Our quant (Infermatic FP8-Dynamic) uses same HF arch class, so the hook
+    paths are identical. Empirical extraction via vLLM hooks in Stage 3 T3.1.
+
+qwen_3:
+  hf_architectures: [Qwen3ForCausalLM]
+  n_layers: 64
+  d_model: 5120
+  preferred_backend: transformer_lens
+  tl_hook_post_mlp_resid: "blocks.{L}.hook_resid_post"
+  nnsight_post_mlp_resid: "model.layers[{L}].output"
+  thinking_toggle_mechanism: "chat_template_kwargs.enable_thinking=False (paper uses thinking OFF for reproduction)"
+  notes: |
+    Qwen 3 32B base. TL supports Qwen3 family (added pre-Qwen 3 release).
+    Thinking mode OFF for paper reproduction fidelity.
+
+gemma_4:
+  hf_architectures: [Gemma4ForConditionalGeneration]
+  n_layers: 60
+  d_model: 5376
+  preferred_backend: nnsight           # TL support for Gemma 4 multimodal is untested as of 2026-04
+  tl_hook_post_mlp_resid: "blocks.{L}.hook_resid_post"
+  nnsight_post_mlp_resid: "model.language_model.layers[{L}].output"   # multimodal: language_model is nested
+  thinking_toggle_mechanism: "chat_template + reasoning delimiter tokens; split activations per-token via mask"
+  thinking_span_extraction:
+    rule: "identify <think>...</think> delimiter tokens in the generated sequence; mask=True for positions between them"
+    answer_span_extraction: "mask=True for positions AFTER the </think> closing tag"
+    empirical_confirmation: "Stage 3 T3.1 must verify delimiter token IDs by generating one thinking-on response and printing the token stream."
+  notes: |
+    Gemma 4 31B is multimodal (Gemma4ForConditionalGeneration with vision_config).
+    nnsight is the safer backend because TL's first-party Gemma 4 support is
+    post-training-cutoff for the TL release we pinned (transformer-lens>=2.15).
+    Empirical backend decision in Stage 3 T3.1.
+    For thinking ON/OFF experiments: Gemma 4 is a reasoning model; the same
+    hook path captures activations at both thinking and answer tokens, but
+    the per-token mask determines which ones feed the two PCA pipelines.
+
+qwen_3_6:
+  hf_architectures: [Qwen3_5ForConditionalGeneration]
+  n_layers: 64
+  d_model: 5120
+  preferred_backend: nnsight           # multimodal; see Gemma 4 note
+  nnsight_post_mlp_resid: "model.language_model.layers[{L}].output"
+  thinking_toggle_mechanism: "chat_template_kwargs.enable_thinking=False (default ON — CORRECTION to earlier notes)"
+  role: judge_only
+  notes: |
+    Judge model. Default output includes thinking trace ('Here is a thinking
+    process...'); for judge usage, disable via enable_thinking=False. This
+    was discovered empirically in Stage 0 smoke (earlier docs claimed Qwen 3.6
+    was a non-thinking model — wrong).
+    We do not extract activations from the judge in core stages, so hook
+    paths are documentary; Stage 7 Ext 2 (reasoning subspace deep-dive) is
+    the only place these might matter for Qwen 3.6.
