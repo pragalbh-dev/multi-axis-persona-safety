@@ -33,7 +33,12 @@
   - Support: batch extraction, layer selection, **mean over response tokens** (default) / last-token / thinking-vs-answer token masks (for Tier 2 reasoning mode)
   - Test: extract activations for 10 prompts on Gemma 2 27B, verify shape and values
 
-- [ ] T2.2: Implement PCA and projection module
+- [ ] T2.1.5: Implement the quantization-validity check utility (per CONVENTIONS "Quantization validity check")
+  - `src/evaluation/quant_validity.py` — one function per check mode.
+  - **Tier 1 mode (paper PC1 available):** `check_tier1(model, paper_pc1_direction, middle_layer, extraction_questions, assistant_like_roles: list[str], fantastical_roles: list[str]) → QuantValidityReport`. Runs ~2 rollouts per role using paper's extraction questions, extracts mean-response-token activations at `middle_layer`, projects onto `paper_pc1_direction`. Returns `{separation, assistant_mean, fantastical_mean, default_assistant_mean, pass: bool}`. Pass iff `separation > 1.5` AND default Assistant near the Assistant-like extreme (top 10% of its group's projection range).
+  - **Tier 2 mode (no paper reference):** `check_tier2(model, model_card_ppl_bf16) → QuantValidityReport`. Runs (a) perplexity on 500 wikitext-v2 tokens, accepts if within 5% of `model_card_ppl_bf16`; (b) prints 5 test role responses (diplomat / poet / hacker / therapist / skeptic) to stdout for manual read-through.
+  - CLI wrapper: `python -m src.evaluation.quant_validity --model <hf_id> --quant <fp8|awq> --mode <tier1|tier2> [--paper-pc1 path/to/pc1.safetensors] [--middle-layer N]`. Writes report to `results/quant_validity/<subject>.json` and appends a `decisions.md` entry.
+  - Test: run both modes on a known-good quantization (e.g., community fp8 of a small model) — expect pass. Then on a deliberately broken quantization (e.g., int2) — expect fail.
   - `src/analysis/pca.py` — centered PCA, eigenspectrum, Marchenko-Pastur threshold
   - `src/analysis/projections.py` — project activations onto PCs, compute cosine similarities
   - Test: load pre-computed role vectors from assistant-axis HuggingFace, run PCA, verify PC1 matches their reported cosine similarity with the assistant axis (>0.71)

@@ -83,7 +83,7 @@ We extend the Assistant Axis paper to study persona space beyond PC1. Four sub-q
 
 **Note:** Stages 4 and 5 can run in parallel (different GPU workloads, no dependency between them). (Only if we have enough GPUs)
 
-**Subjects across Stages 3/4/6:** Tier 1 (Gemma 2 27B, Qwen 3 32B thinking OFF, Llama 3.3 70B) + **Gemma 4 31B dense** in both thinking ON and OFF modes = 5 subjects. Gemma 4 31B was promoted from extension to core because it fills the paper's frontier+reasoning gap (§8.1) without extra tooling. MoE (Qwen 3.6-35B-A3B) stays in Stage 7 Ext 1 because it needs nnsight-backed per-expert extraction tooling.
+**Subjects across Stages 3/4/6 (revised 2026-04-24 for 2-GPU constraint):** Gemma 2 27B + Qwen 3 32B thinking OFF + **Gemma 4 31B dense** in both thinking ON and OFF modes = **4 subjects**. All run quantized per CONVENTIONS "Quantization policy." **Llama 3.3 70B moved to Stage 7 Ext 9** (hardware-gated on 4-GPU availability; cited from paper in the meantime). MoE (Qwen 3.6-35B-A3B) remains in Stage 7 Ext 1 (tooling-gated + hardware-gated). Gemma 4 31B was promoted from extension to core because it fills the paper's frontier+reasoning gap (§8.1) without extra tooling. Core focus: validating our setup against paper's reproducible results on 2 Tier 1 + extending the multi-axis safety story to 2 Tier 2 modes, which delivers H1-H4 claims independent of Llama.
 
 ---
 

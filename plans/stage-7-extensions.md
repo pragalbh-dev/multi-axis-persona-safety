@@ -34,6 +34,7 @@ Gemma 4 31B dense (both thinking modes) was **promoted into Stages 3/4/6** as a 
 | 6 | SAE feature mapping | Medium | Medium | pending |
 | 7 | Trait-persona decomposition | Low | Medium | pending |
 | 8 | Variable α, β composition fit (revisit Stage 5) | Low | Low | pending |
+| 9 | Llama 3.3 70B reproduction (hardware-gated) | Medium | High (closes Tier 1) | pending, gated on 4-GPU availability |
 
 ---
 
@@ -159,6 +160,31 @@ Gemma 4 31B dense (both thinking modes) was **promoted into Stages 3/4/6** as a 
   - For each of 275 personas: project onto the 5 (or 10) trait directions
   - Compute reconstruction error: ||v_persona - projection||
   - Report: are personas well-explained by traits, or is there significant residual?
+
+---
+
+## Ext 9: Llama 3.3 70B reproduction (hardware-gated)
+
+**Why extension and not core:** 2-GPU constraint (64 GB total) during the main project timeline. Llama 3.3 70B at fp8 = ~70 GB just for weights + KV cache; doesn't fit. Core Stages 3-6 run on 4 subjects (Gemma 2 27B, Qwen 3 32B, Gemma 4 31B ON/OFF). Llama is the paper's largest-scale Tier 1; reproducing on it closes the Tier 1 story and is a high-value Ext if the remaining 2 GPUs on the GPU box ever free up.
+
+**Activation trigger:** when ≥4 RTX 5090 GPUs are available on the box (or equivalent 128 GB VRAM). Until then, the claim "this generalizes to 70B" cites paper's result; we don't rerun.
+
+### Tasks
+
+- [ ] T7.19: Load Llama 3.3 70B at fp8 on 4× 5090 (TP=4)
+  - Pick official fp8 checkpoint (e.g., `neuralmagic/Meta-Llama-3.3-70B-Instruct-FP8`) or self-calibrate AWQ. Log choice in `decisions.md`.
+  - Verify load at TP=4, batched inference hits ≥90% util on a 200-prompt smoke test.
+  - Run the quantization-validity check (Tier 1 mode using paper's released Llama PC1 direction from HF).
+
+- [ ] T7.20: Rerun core pipeline on Llama 3.3 70B
+  - Replay Stage 3 (T3.1-T3.10), Stage 4 (T4.0-T4.8), Stage 6 (T6.1-T6.4) on Llama.
+  - Extend cross-model stability (Stage 3 T3.3) to 5 subjects / 10 pairs.
+  - Extend blind-spot analysis (Stage 3 T3.8, Stage 4 T4.5) with Llama's result.
+
+- [ ] T7.21: Update cross-model claim + report section
+  - Update `wiki/papers/assistant-axis.md` + the report's cross-model stability section: "PC1 stable across 3 architectures (Gemma / Qwen / Llama) × 2 generations × 2 thinking modes = 5 subjects, 10 pairs."
+  - If Llama result confirms H1 (AA capping has blind spots), add to the headline; if it doesn't, discuss scale-dependence of the finding.
+  - Update `plans/progress.md` with a dedicated Ext 9 handoff block.
 
 ---
 

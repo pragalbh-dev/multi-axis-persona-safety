@@ -25,6 +25,14 @@
 
 ### Tasks
 
+- [ ] T3.1.0: Run quantization-validity check per subject (GATES T3.1)
+  - Use `src/evaluation/quant_validity.py` from Stage 2 T2.1.5.
+  - **Tier 1 subjects (Gemma 2 27B, Qwen 3 32B):** Tier 1 mode using paper's pre-computed PC1 from HF (pulled in Stage 0 T0.7). Pass criteria per CONVENTIONS "Quantization validity check": separation > 1.5, default Assistant at Assistant-like extreme.
+  - **Tier 2 subjects (Gemma 4 31B thinking ON + OFF):** Tier 2 mode — perplexity within 5% of model card + qualitative role-response read-through.
+  - **If any subject fails:** halt extraction for that subject, log to `decisions.md` with failure details, debug quantization (try next quant in preference order, re-calibrate AWQ, adjust tensor-parallel) before retrying. Do NOT proceed to T3.1 extraction on a failing subject — all downstream PCA / steering / capping will be contaminated.
+  - Record per-subject validity numbers + chosen quant + provenance in `plans/decisions.md`.
+  - ~10 min per subject × 4 subjects ≈ 40 min.
+
 - [ ] T3.1: Load pre-computed persona role vectors + extract for Tier 2 (regen Tier 1 rollouts conditionally)
   - **Tier 1 (3 models):** download pre-computed role vectors from assistant-axis HuggingFace. Verify: 275 archetypes expand to **n = 377-463 role vectors per model** after paper's fully/somewhat split (line 96 — each role yields up to two vectors, one per role-expression tier, if ≥10 rollouts pass the filter in that tier). Confirm dimensionality matches the model's hidden size. Log n per model in the manifest.
   - **Tier 1 rollout regeneration — conditional on Stage 0 T0.7 audit:** if the HF release does NOT include raw rollouts / projection-distribution files (we need them for the τ-calibration distribution, see CONVENTIONS "τ-calibration distribution"), regenerate here: 275 roles × 300 rollouts/role × 3 Tier 1 models using the 240 extraction questions + 5 default-Assistant system prompts pulled in Stage 0 T0.7. Plus 300 default-Assistant rollouts/model. Filter via the role-expression judge (Qwen 3.6-27B invoked with `configs/role_expression_prompt.yaml`). Cache per-rollout mean-response-token activations at every layer. Reduced from paper's 1,200/role to 300/role for compute feasibility; document divergence in manifest.
@@ -55,11 +63,13 @@
   - **Fallback (paper's convention):** report top-k PCs explaining ≥70% variance if MP flags everything as noise.
   - Generate: scree plot with MP threshold line per model.
 
-- [ ] T3.3: Cross-model PC stability analysis + pooling-decision table
-  - Compute pairwise cosine similarity between same-numbered PCs across all 5 subjects (Tier 1 × 3 + Gemma 4 31B ON/OFF × 2). Full 5×5 similarity matrix for PCs 1-10.
-  - Verify: PC1 stability > 0.92 (matches paper). Paper line 294 reports: PC2 Qwen↔Llama ≈ 0.89, Gemma PC2 < 0.61; PC3 Qwen↔Llama ≈ 0.56, Gemma PC3 nearly orthogonal. Expect similar shape — PC1 stable, PC2 partially stable, PC3+ often model-specific.
+- [ ] T3.3: Cross-model PC stability analysis + pooling-decision table (4 subjects, 6 pairs)
+  - Compute pairwise cosine similarity of same-numbered PCs across all **4 subjects** (Gemma 2 27B, Qwen 3 32B, Gemma 4 31B thinking-ON, Gemma 4 31B thinking-OFF). Full 4×4 similarity matrix for PCs 1-10 → 6 distinct off-diagonal pairs.
+  - **Verify PC1 stability** — paper reports > 0.92 across 3 Tier 1 subjects (3 pairs). Our claim becomes: PC1 stable across 2 architectures (Gemma vs Qwen) × 2 generations (Gemma 2 vs Gemma 4) × 2 thinking modes (Gemma 4 ON vs OFF). If PC1 pairwise cos_sim > 0.85 holds across all 6 pairs, this is **broader** evidence of PC1 stability than paper's 3-same-generation replication, even if fewer subjects.
+  - Paper's PC2/PC3 findings (line 294): PC2 Qwen↔Llama ≈ 0.89, Gemma PC2 < 0.61; PC3 Qwen↔Llama ≈ 0.56, Gemma PC3 nearly orthogonal. Our 4 subjects will give different breakdown (no Llama). Report the actual cross-model shape.
+  - **Llama 3.3 70B reproduction** — not run here; cited from paper. Stage 7 Ext 9 unblocks when GPUs free up; if that happens we extend this matrix to 5 subjects (10 pairs) post-hoc.
   - **Pooling-decision table — locked output:** `configs/pc_pooling.yaml` with `{pc_index: {pool_group: [subjects that can be averaged], per_model: [subjects that must report alone]}}`. Rule per CONVENTIONS: pool only where pairwise cos_sim > 0.7; everything else reports per-model.
-  - Stage 4 T4.1 reads this file and respects the pooling decisions — it does NOT average results across subjects whose PC2 (or PC3) was flagged as model-specific.
+  - Stage 4 T4.1 reads this file and respects the pooling decisions.
 
 - [ ] T3.4: PC interpretation via loading analysis
   - For each PC (1 through k): rank all 275 roles by projection

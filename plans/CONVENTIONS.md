@@ -104,6 +104,18 @@ These are derived directly from Lu et al. 2601.10387 via line-by-line check of t
   - **LASSO features (Stage 3 T3.8):** projections onto `{AA, PC2, PC3, ..., PCk}`. Drop PC1 as redundant with AA. "Safety-relevant PC" = LASSO-nonzero among PCs 2..k only (AA is the always-on baseline). Blind spot lift = `AUC(AA + LASSO-selected PCs 2..k) − AUC(AA only)` with bootstrap BCa CI.
   - **Adversarial direction (Stage 4 T4.6):** `u_adv = Σ_{i≥2} c_i · PC_i` (from the LASSO fit above), then **explicitly project AA out**: `u_adv ← u_adv − (⟨u_adv, AA⟩ / ||AA||²) · AA`. Needed because PCs 2..k are orthogonal to PC1 but not strictly to AA. L2-normalize, scale to lmsys-chat-1m norm.
   - **Stage 5 composition is unaffected** — composition is about role-vector arithmetic in the d_model activation space, independent of the AA vs PC1 choice.
+- **Quantization policy (2-GPU hardware constraint — 2× RTX 5090 = 64 GB):** all subjects and judges run quantized. Preference order per model (decided Stage 0 T0.4 / T0.5):
+  1. Official-provider **fp8** checkpoint on HF (e.g., `Qwen/...-FP8`, `neuralmagic/...-FP8`) — vLLM/SGLang native, hardware-accelerated on 5090 Ada tensor cores. Best quality × throughput.
+  2. Official-provider or community **AWQ 4-bit** — vLLM native, good quality and speed.
+  3. **Unsloth fp8 or AWQ uploads** (NOT their GGUF line).
+  4. **Self-calibrated AWQ** via `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model.
+  - **Avoid:** GGUF (llama.cpp format; vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (unverified at extraction fidelity).
+  - **fp8 ≠ GGUF Q8_0.** fp8 is an 8-bit floating-point format with hardware tensor-core support in vLLM. GGUF Q8_0 is an 8-bit integer format native to llama.cpp — incompatible with our vLLM throughput target. Do NOT conflate; future agents, read this carefully.
+- **Quantization validity check (required before Stage 3 T3.1 extraction per subject):**
+  - **Tier 1 subjects (paper released PC1 direction on HF):** project test activations onto paper's bf16 PC1 direction. Run 25 Assistant-like roles (researcher, debugger, consultant, analyst, writer, …) + 25 fantastical roles (bard, ghost, leviathan, eldritch, …) + default Assistant (no system prompt), ~2 rollouts each using paper's extraction questions. Extract mean-response-token activations at presumed middle layer. Pass if `(μ_assistant_projection − μ_fantastical_projection) / pooled_std > 1.5` AND default Assistant sits near the Assistant-like extreme.
+  - **Tier 2 subjects (no paper reference):** (a) perplexity on 500 wikitext-v2 tokens within 5% of the model-card published bf16 perplexity; (b) qualitative role-response check on 5 test roles (diplomat, poet, hacker, therapist, skeptic) with manual read-through for semantic appropriateness.
+  - Per-subject quant choice + validity numbers logged to `plans/decisions.md`. Gates Stage 3 T3.1 extraction; do not proceed on any subject that fails.
+  - ~10 min per subject wall-clock.
 
 ---
 
