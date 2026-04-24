@@ -141,12 +141,12 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > - **Deferred to Stage 7 Ext 1** — Qwen 3.6-35B-A3B MoE.
 
 ### Eval dataset IDs
-> _Decided Stage 0._
-> - Shah et al. 1,100 persona jailbreaks: `<hf-id or path>`
-> - IFEval 541: `<hf-id>`
-> - MMLU Pro 1,400 subsample: `<hf-id>`
-> - GSM8k 1,000 subsample: `<hf-id>`
-> - EQ-Bench 171: `<hf-id>`
+> **Decided Stage 0 / T0.10 (2026-04-24).** Snapshot revisions pinned in `data/eval/<name>/meta.json`. All downloads stored as `prompts.jsonl` + `meta.json`.
+> - Shah et al. 1,100 persona jailbreaks: **DEFERRED to Stage 2 T2.0** — not locatable on HuggingFace via API search 2026-04-24. The dataset likely lives in a GitHub supplementary to Shah et al. 2311.03348; `assistant-axis` repo does not reference it. Action: locate canonical source when building Stage 2 safety-eval harness.
+> - IFEval 541: `google/IFEval@966cd89`, split `train` (unusually, IFEval only ships train); 541 rows verified.
+> - MMLU Pro 1,400 subsample: `TIGER-Lab/MMLU-Pro@54611cd`, split `test` (12,032 rows), seeded subsample with `random.Random(42).sample`, indices sorted, 1,400 rows.
+> - GSM8k 1,000 subsample: `openai/gsm8k@740312a` config `main`, split `test` (1,319 rows), seeded subsample (seed=42), 1,000 rows.
+> - EQ-Bench 171: `pbevan11/EQ-Bench@9ce8e5f`, split `validation` (the dataset's only split), 171 rows.
 
 ### Judge prompt template
 > _Decided Stage 2 when safety eval harness implemented. Record: exact prompt, parsing rules, label set (e.g., harmful/refusal/ambiguous), and agreement rule (when to use cross-check judge)._
