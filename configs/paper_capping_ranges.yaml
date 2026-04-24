@@ -1,0 +1,60 @@
+# Paper's per-model PC1 / Assistant Axis capping layer ranges.
+#
+# Source: Lu et al. 2601.10387 §5.1.2 (line 691 in our extracted copy), Figure 10,
+# Appendix F. These are the ranges they reproduce as their paper-best capping
+# configs. Stage 4 T4.0 uses these verbatim for Tier 1 reproduction, then sweeps
+# fresh on Tier 2 subjects (Gemma 4 31B) per CONVENTIONS "Layer-scope convention".
+#
+# Format per subject:
+#   center            — midpoint layer index (float)
+#   width             — number of layers covered by the range
+#   layers            — explicit [start, end] inclusive
+#   tau_percentile    — τ percentile of rollout-projection distribution (paper's 25th default)
+#   n_layers_total    — model's total transformer block count (for sanity check)
+#
+# Notes:
+#   - Capping is applied at all token positions (prompt + response).
+#   - Capping formula: h <- h - v * min(<h, v> - tau, 0), v = unit AA direction,
+#     scaled to lmsys-chat-1m mean residual-stream norm at the layer
+#     (per CONVENTIONS Scientific conventions).
+#   - Extraction layer is UNRELATED to capping range per paper — they are
+#     independently swept. Extraction layer is where PCA/AA are fit (argmax
+#     cos_sim(PC1, AA) via per-layer sweep, ~middle layer).
+
+qwen_3_32b:
+  center: 49.5
+  width: 8
+  layers: [46, 53]
+  tau_percentile: 25
+  n_layers_total: 64
+  source: "paper §5.1.2 line 691 + Figure 10"
+
+llama_3_3_70b:
+  center: 63.5
+  width: 16
+  layers: [56, 71]
+  tau_percentile: 25
+  n_layers_total: 80
+  source: "paper §5.1.2 line 691 + Figure 10"
+  status: "deferred — Stage 7 Ext 9 (hardware-gated, needs 4 GPUs)"
+
+gemma_2_27b:
+  # Paper reports Gemma 2 27B in Appendix F; exact [center, width] need manual
+  # transcription from the paper PDF during Stage 2 T2.0 or Stage 4 T4.0 start.
+  # Leaving placeholder + explicit TODO so downstream agents fail loudly rather
+  # than accept a guess.
+  center: null
+  width: null
+  layers: null
+  tau_percentile: 25
+  n_layers_total: 46
+  status: "TODO — transcribe from paper Appendix F before Stage 4 T4.0"
+  source: "paper Appendix F (Table — not yet transcribed)"
+
+# Tier 2 subjects run their own 2D sweep in Stage 4 T4.0.
+gemma_4_31b_thinking_off:
+  status: "sweep in Stage 4 T4.0 — centers {40%,50%,60%,70%,80%} of 60, widths {4,8,16,24}, τ {1,10,25,50,75}th"
+  n_layers_total: 60
+gemma_4_31b_thinking_on:
+  status: "sweep in Stage 4 T4.0 — same grid as thinking-off; plus thinking-token vs answer-token scoped variants"
+  n_layers_total: 60

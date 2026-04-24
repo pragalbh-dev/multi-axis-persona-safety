@@ -124,3 +124,37 @@ Copy this block, fill in, append at the **end** of this file. Do not edit earlie
 
 **Downstream dependencies:** Stage 3 T3.1.0 quant-validity check; all Stage 3/4/6 experiments that use Gemma 2 27B.
 
+---
+
+## [2026-04-24 18:10] Stage 0 / T0.7 — Paper artifacts audit: HF dataset has more than expected
+
+**Decision:** Use the full `lu-christina/assistant-axis-vectors` HF dataset (not just AA directions) as input for Stage 3 Tier 1 PCA. Skip rollout regeneration for Tier 1 PCA fit; still regenerate rollouts for the τ-calibration distribution needed by Stage 4 T4.0.
+
+**Alternatives considered:**
+- Regenerate Tier 1 role + trait vectors from scratch to ensure provenance consistency — wastes ~1 day of GPU for no scientific gain; paper's pre-computed vectors were made on bf16 which is the reference we're validating our fp8 extraction against.
+
+**Reason:** The HF dataset (1.2 GB cached to `data/paper_artifacts/assistant_axis_vectors/`) contains per-subject (Gemma 2 27B, Qwen 3 32B, Llama 3.3 70B):
+  - `assistant_axis.pt` — shape `[n_layers, d_model]` bf16; AA direction at every layer.
+  - `default_vector.pt` — mean default-Assistant activation.
+  - `role_vectors/<role>.pt` — 275 per subject.
+  - `trait_vectors/<trait>.pt` — 240 per subject.
+  - `capping_config.pt` — per-layer contrast vectors `contrast_role_pos3_default1` (Qwen + Llama only; **Gemma 2 27B is missing this file — confirmed**).
+  - Raw rollouts and τ-calibration distributions are **NOT** released.
+
+**Implications:**
+- Stage 3 T3.1 Tier 1 PCA: reads role/trait vectors directly, skips generation.
+- Stage 3 T3.1.0 quant-validity check for Tier 1 (Gemma 2 27B, Qwen 3 32B): projects our-quantized-model's test-prompt activations onto the paper's bf16 AA direction. Ready to use.
+- Stage 4 T4.0 capping for Gemma 2 27B: must transcribe layer range from paper Appendix F (no capping_config.pt); Qwen 3 32B reads capping_config.pt OR uses paper line 691 transcription directly (`configs/paper_capping_ranges.yaml`).
+- **τ-calibration still requires rollout regeneration** for all subjects, since paper didn't release per-rollout projection distributions. This is a Stage 3 T3.1 cost for all 4 subjects (not just Tier 2).
+
+**Source:**
+- `huggingface-cli download --repo-type dataset lu-christina/assistant-axis-vectors --local-dir data/paper_artifacts/assistant_axis_vectors` — 1.2 GB pulled 2026-04-24.
+- `external/assistant-axis` pinned at commit `a989619`, message "Update jailbreak_capped.json".
+- File inspection via `torch.load(...)` — schemas documented above.
+
+**Reversibility:** high. If we decide to regenerate Tier 1 from scratch, wipe `data/paper_artifacts/assistant_axis_vectors/`, run the extraction pipeline, done.
+
+**How to revert:** set a `configs/extraction.yaml` flag `use_paper_tier1_vectors: false`; re-run Stage 3 T3.1.
+
+**Downstream dependencies:** Stage 3 T3.1 (skips Tier 1 PCA input gen), T3.1.0 (uses paper's bf16 AA for fidelity check), T3.5 (role-vector PCA reads from paper or regenerated cache). Stage 4 T4.0 capping-layer-range config.
+
