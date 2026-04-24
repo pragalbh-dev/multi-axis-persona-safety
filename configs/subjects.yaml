@@ -1,0 +1,67 @@
+# Subject + judge model configurations for vLLM.
+#
+# Each entry records: HF ID of the fp8 checkpoint, the base (for tokenizer
+# reference), tensor_parallel_size, vLLM loader knobs, and any chat-template
+# kwargs needed to control thinking mode.
+#
+# Verified against HuggingFace 2026-04-24 (see plans/decisions.md 17:40).
+
+gemma_2_27b:
+  role: subject
+  hf_id: Infermatic/gemma-2-27b-it-FP8-Dynamic
+  base_hf_id: google/gemma-2-27b-it
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.85
+  trust_remote_code: false
+  attention_backend: null             # default (TRITON_ATTN is fine for Gemma 2)
+  chat_template_kwargs: {}
+  notes: |
+    Community fp8-dynamic (activations quantized at runtime). No official Google fp8.
+    46-layer Gemma2ForCausalLM. Thinking mode: N/A (Gemma 2 pre-dates thinking).
+
+qwen_3_32b:
+  role: subject
+  hf_id: Qwen/Qwen3-32B-FP8
+  base_hf_id: Qwen/Qwen3-32B
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.85
+  trust_remote_code: false
+  attention_backend: null
+  chat_template_kwargs:
+    enable_thinking: false            # paper reproduction fidelity
+  notes: |
+    Official Qwen fp8. 64-layer Qwen3ForCausalLM. Toggle thinking off via
+    chat_template_kwargs.enable_thinking=False.
+
+gemma_4_31b:
+  role: subject
+  hf_id: RedHatAI/gemma-4-31B-it-FP8-block
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.85
+  trust_remote_code: true             # Gemma 4 is multimodal with custom ops
+  attention_backend: TRITON_ATTN      # vLLM #40677: FLASHINFER breaks Gemma 4 on Blackwell
+  chat_template_kwargs: {}            # per-call override for thinking ON/OFF (see smoke_load)
+  thinking_modes: [on, off]           # test both
+  notes: |
+    Community fp8-block (compressed-tensors float-quantized).
+    Gemma4ForConditionalGeneration (multimodal); we use text-only.
+    60-layer text transformer (hidden 5376). trust_remote_code required.
+    MUST use TRITON_ATTN on Blackwell per vLLM #40677.
+
+qwen_3_6_27b:
+  role: judge_primary
+  hf_id: Qwen/Qwen3.6-27B-FP8
+  base_hf_id: Qwen/Qwen3.6-27B
+  tensor_parallel_size: 2
+  gpu_memory_utilization: 0.85
+  trust_remote_code: false
+  attention_backend: null
+  chat_template_kwargs: {}
+  notes: |
+    Official Qwen fp8, released 2026-04-22, last modified 2026-04-24.
+    Qwen3_5ForConditionalGeneration multimodal architecture; text-only use.
+    64-layer text transformer (hidden 5120). No thinking mode (non-thinking family).
+
+# Cross-check judge reuses the gemma_4_31b entry above with thinking OFF and
+# self-preference enforcement (skip when subject is Gemma 4 31B).
