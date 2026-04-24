@@ -155,10 +155,15 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > _Decided Stage 2 when extraction harness implemented. Record: tensor dtype (bf16 / fp16 / fp32 tradeoff), shape convention (n_prompts × n_layers × d_model OR one file per layer), metadata fields in sibling `.meta.json`._
 
 ### Max input/output lengths per task
-> _Decided Stage 0 after token-distribution audit._
-> - Persona jailbreak eval: input=<p99 tokens>, output=<tokens>
-> - IFEval / MMLU Pro / GSM8k / EQ-Bench: one entry each
-> - Judge call: input=<typical>, output=<max, e.g., 128 for label + brief rationale>
+> **Decided Stage 0 / T0.2 (2026-04-24).** Full audit in `configs/eval_sizes.yaml`; produced from seeded 200-sample subsets per eval dataset × 4 tokenizers (gemma_2_27b, qwen_3_32b, gemma_4_31b, qwen_3_6_27b). Tokenizer-level distributions are near-identical across the 4 families (within ~5%), so the numbers below are maxed across families.
+> - IFEval: p99≈107; `max_in=256`, `max_out=1024`, total 1280.
+> - MMLU Pro 1400 (options inlined): p99≈649; `max_in=1024`, `max_out=256`, total 1280.
+> - GSM8k 1000: p99≈123; `max_in=256`, `max_out=512`, total 768.
+> - EQ-Bench 171: p99≈741 (longest); `max_in=1024`, `max_out=512`, total 1536.
+> - Extraction questions (paper's 240): p99≈24 for the bare question; add role-playing system prompt at rollout → `max_in=512`, `max_out=512`, total 1024 (audited value of 64 is pre-system-prompt).
+> - Persona jailbreak (Shah, deferred): will audit when dataset located.
+> - Judge call (9-category): `max_out=128` (single label + brief rationale); `max_in` matches the prompt + response pair (Stage 2 T2.0 will finalize).
+> - Judge call (3-label role-expression): `max_out=8` (single digit); `max_in` tracks the role-specific template + response.
 
 ### Batch size & TP per model
 > _Decided Stage 0 after GPU util baseline test._

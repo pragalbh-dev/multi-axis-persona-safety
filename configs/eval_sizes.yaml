@@ -1,0 +1,268 @@
+seed: 42
+sample_n: 200
+tokenizers:
+  gemma_2_27b: google/gemma-2-27b-it
+  qwen_3_32b: Qwen/Qwen3-32B
+  gemma_4_31b: google/gemma-4-31B-it
+  qwen_3_6_27b: Qwen/Qwen3.6-27B
+entries:
+  ifeval::gemma_2_27b:
+    dataset: ifeval
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 200
+      min: 17
+      p50: 42
+      p95: 83
+      p99: 106
+      max: 136
+    max_input_len: 256
+    max_output_len: 1024
+    max_model_len: 1280
+  ifeval::qwen_3_32b:
+    dataset: ifeval
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 200
+      min: 17
+      p50: 42
+      p95: 82
+      p99: 105
+      max: 136
+    max_input_len: 256
+    max_output_len: 1024
+    max_model_len: 1280
+  ifeval::gemma_4_31b:
+    dataset: ifeval
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 200
+      min: 17
+      p50: 42
+      p95: 83
+      p99: 106
+      max: 136
+    max_input_len: 256
+    max_output_len: 1024
+    max_model_len: 1280
+  ifeval::qwen_3_6_27b:
+    dataset: ifeval
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 200
+      min: 17
+      p50: 42
+      p95: 84
+      p99: 107
+      max: 137
+    max_input_len: 256
+    max_output_len: 1024
+    max_model_len: 1280
+  mmlu_pro_1400::gemma_2_27b:
+    dataset: mmlu_pro_1400
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 200
+      min: 44
+      p50: 173
+      p95: 435
+      p99: 627
+      max: 695
+    max_input_len: 1024
+    max_output_len: 256
+    max_model_len: 1280
+  mmlu_pro_1400::qwen_3_32b:
+    dataset: mmlu_pro_1400
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 200
+      min: 46
+      p50: 177
+      p95: 435
+      p99: 639
+      max: 721
+    max_input_len: 1024
+    max_output_len: 256
+    max_model_len: 1280
+  mmlu_pro_1400::gemma_4_31b:
+    dataset: mmlu_pro_1400
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 200
+      min: 45
+      p50: 175
+      p95: 435
+      p99: 645
+      max: 695
+    max_input_len: 1024
+    max_output_len: 256
+    max_model_len: 1280
+  mmlu_pro_1400::qwen_3_6_27b:
+    dataset: mmlu_pro_1400
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 200
+      min: 47
+      p50: 178
+      p95: 445
+      p99: 649
+      max: 712
+    max_input_len: 1024
+    max_output_len: 256
+    max_model_len: 1280
+  gsm8k_1000::gemma_2_27b:
+    dataset: gsm8k_1000
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 200
+      min: 23
+      p50: 58
+      p95: 106
+      p99: 123
+      max: 161
+    max_input_len: 256
+    max_output_len: 512
+    max_model_len: 768
+  gsm8k_1000::qwen_3_32b:
+    dataset: gsm8k_1000
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 200
+      min: 23
+      p50: 59
+      p95: 106
+      p99: 122
+      max: 162
+    max_input_len: 256
+    max_output_len: 512
+    max_model_len: 768
+  gsm8k_1000::gemma_4_31b:
+    dataset: gsm8k_1000
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 200
+      min: 23
+      p50: 59
+      p95: 106
+      p99: 123
+      max: 158
+    max_input_len: 256
+    max_output_len: 512
+    max_model_len: 768
+  gsm8k_1000::qwen_3_6_27b:
+    dataset: gsm8k_1000
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 200
+      min: 23
+      p50: 59
+      p95: 106
+      p99: 121
+      max: 162
+    max_input_len: 256
+    max_output_len: 512
+    max_model_len: 768
+  eq_bench::gemma_2_27b:
+    dataset: eq_bench
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 171
+      min: 235
+      p50: 389
+      p95: 624
+      p99: 741
+      max: 990
+    max_input_len: 1024
+    max_output_len: 512
+    max_model_len: 1536
+  eq_bench::qwen_3_32b:
+    dataset: eq_bench
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 171
+      min: 219
+      p50: 370
+      p95: 589
+      p99: 693
+      max: 968
+    max_input_len: 1024
+    max_output_len: 512
+    max_model_len: 1536
+  eq_bench::gemma_4_31b:
+    dataset: eq_bench
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 171
+      min: 235
+      p50: 392
+      p95: 632
+      p99: 741
+      max: 994
+    max_input_len: 1024
+    max_output_len: 512
+    max_model_len: 1536
+  eq_bench::qwen_3_6_27b:
+    dataset: eq_bench
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 171
+      min: 235
+      p50: 391
+      p95: 621
+      p99: 725
+      max: 1010
+    max_input_len: 1024
+    max_output_len: 512
+    max_model_len: 1536
+  extraction_questions::gemma_2_27b:
+    dataset: extraction_questions
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 200
+      min: 5
+      p50: 12
+      p95: 20
+      p99: 24
+      max: 26
+    max_input_len: 64
+    max_output_len: 512
+    max_model_len: 576
+  extraction_questions::qwen_3_32b:
+    dataset: extraction_questions
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 200
+      min: 5
+      p50: 12
+      p95: 19
+      p99: 24
+      max: 26
+    max_input_len: 64
+    max_output_len: 512
+    max_model_len: 576
+  extraction_questions::gemma_4_31b:
+    dataset: extraction_questions
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 200
+      min: 5
+      p50: 12
+      p95: 20
+      p99: 24
+      max: 26
+    max_input_len: 64
+    max_output_len: 512
+    max_model_len: 576
+  extraction_questions::qwen_3_6_27b:
+    dataset: extraction_questions
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 200
+      min: 5
+      p50: 12
+      p95: 19
+      p99: 24
+      max: 25
+    max_input_len: 64
+    max_output_len: 512
+    max_model_len: 576
