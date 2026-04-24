@@ -45,7 +45,7 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 ### Quantization policy (2-GPU constraint)
 - **All subjects and judges run quantized.** bf16 does not fit on 2× 5090 for 27-35B models with practical KV cache.
 - **Preference order (Stage 0 T0.4 / T0.5 per model):**
-  1. **Official provider fp8** checkpoint on HF if available (e.g., `Qwen/...-FP8`, `google/...-fp8`, `neuralmagic/...-FP8`). vLLM / SGLang native, hardware-accelerated on 5090 Ada tensor cores. Best quality × throughput.
+  1. **Official provider fp8** checkpoint on HF if available (e.g., `Qwen/...-FP8`, `google/...-fp8`, `neuralmagic/...-FP8`). vLLM / SGLang native, hardware-accelerated on 5090 **Blackwell** (GB202) fp8 tensor cores — same E4M3/E5M2 formats as Hopper/Ada, faster tensor cores than Ada. Best quality × throughput.
   2. **Official provider or community AWQ 4-bit** (vLLM native). Good quality, good speed.
   3. **Unsloth fp8 or AWQ uploads** (not their GGUF line). Fallback if #1 and #2 absent.
   4. **Self-calibrated AWQ** using `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model. Safest, known provenance.
@@ -169,3 +169,4 @@ After completing any task:
 - Claim prompt-level attack implications from steering results
 - Commit large files to git (activations, model weights go in data/ which is gitignored)
 - Amend previous commits — always create new ones
+- **Do NOT rely on training-cutoff knowledge for anything that changes fast.** This includes: package versions (vLLM, SGLang, PyTorch, TransformerLens, nnsight, autoawq, etc.), Blackwell / sm_120 compatibility status, exact HuggingFace model IDs, fp8/AWQ checkpoint availability, engine release notes, Python version compatibility. For every such question during Stage 0 and whenever dependencies are touched later, **use WebSearch / WebFetch to check PyPI, HuggingFace, GitHub release notes, and official docs directly**. Log the exact URL / release tag / HF revision you verified against in `plans/decisions.md` so downstream agents can reproduce. If you find yourself about to write `vllm>=0.x.y` from memory — stop and verify.

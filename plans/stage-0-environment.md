@@ -15,9 +15,22 @@ No prior stage. You are the first.
 
 ## Prerequisites
 
-- 4× RTX 5090 accessible via SSH (`synaptic@synaptic-5090` on Tailscale)
-- HuggingFace token in `.env` with access to gated models (Gemma, Llama)
+- 2× RTX 5090 accessible via SSH (`synaptic@synaptic-5090` on Tailscale). The other 2 GPUs on the box are occupied.
+- HuggingFace token in `.env` with access to gated models (Gemma, Qwen)
 - `~/obsidian-vault/` symlink working on the GPU box
+
+## Stage 0 meta-rule: web-verify everything that changes fast
+
+Stage 0 is the riskiest stage for stale knowledge. Before writing any version pin, model ID, or compatibility claim, **web-verify against current sources** (per CONVENTIONS "Verify, don't guess"):
+- **vLLM / SGLang Blackwell (sm_120) support** — check GitHub release notes + open issues. 5090 is Blackwell GB202; some releases may have Blackwell kernel bugs.
+- **Python version compatibility** — match against chosen engine's current pyproject / CI matrix.
+- **PyTorch + CUDA + FlashAttention versions** required by the chosen engine for Blackwell.
+- **HuggingFace model IDs** — search HF per target model (Gemma 2 27B IT, Qwen 3 32B, Gemma 4 31B IT, Qwen 3.6-27B judge). Confirm exact `repo_id`, revision, and fp8/AWQ variants exist.
+- **Unsloth / Neural Magic quant catalogs** — their published fp8/AWQ uploads change; check their HF pages directly.
+- **`uv` / `ruff` / `mypy` / `pytest` / `pyarrow` / `plotly` / `dash` / `pandas` / `sklearn` / `autoawq` / `transformer-lens` / `nnsight` versions** — PyPI latest.
+- **assistant-axis and persona_vectors repo state** — what's actually in the repo today (file names, HF uploads, notebooks). Don't assume based on paper text.
+
+For every version, model ID, or compatibility status you lock in this stage, **cite the URL + date/tag/commit** in `plans/decisions.md`. Example entry source: `https://pypi.org/project/vllm/ -> 0.7.3 (2026-03-18), changelog confirms Blackwell sm_120 support`.
 
 ---
 
@@ -37,7 +50,7 @@ No prior stage. You are the first.
 - [ ] **T0.1: Decide and install inference engine (vLLM vs SGLang)**
   - Check release notes / model support matrix for both engines at the current version.
   - Must support at minimum: Gemma 2 27B, Qwen 3 32B (thinking OFF), Gemma 4 31B-it (thinking ON+OFF), Qwen 3.6-27B dense judge — all in **fp8 or AWQ 4-bit** on 2× RTX 5090 with TP=2.
-  - **fp8 support on 5090 Ada tensor cores is a hard requirement** — this is the 2-GPU hardware constraint's biggest consequence. vLLM has mature fp8 support; SGLang also supports fp8. Verify the specific engine build's fp8 path works on Ada (not just Hopper).
+  - **fp8 support on 5090 Blackwell tensor cores is a hard requirement** — this is the 2-GPU hardware constraint's biggest consequence. vLLM has mature fp8 support; SGLang also supports fp8. 5090 is Blackwell (GB202), not Ada — verify the specific engine build's fp8 path works on **Blackwell sm_120** compute capability (CUDA kernels may need rebuilds for Blackwell vs fall-through to Hopper sm_90 paths). This is a real engine-picking criterion — some vLLM/SGLang releases have Blackwell-specific bugs; check release notes.
   - Pick one. Log: chosen engine, version, Python version, fp8 and AWQ verification status, why the other was rejected. Record in `CONVENTIONS.md` under "Inference engine" and "Python version".
   - Install via `uv` with pinned version in `pyproject.toml`.
   - **Out-of-scope for this stage:** Llama 3.3 70B and Qwen 3.6-35B-A3B MoE don't fit in 64 GB comfortably — they are Stage 7 Ext targets only. Engine choice doesn't need to optimize for them.

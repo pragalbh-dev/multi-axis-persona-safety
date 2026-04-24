@@ -105,12 +105,13 @@ These are derived directly from Lu et al. 2601.10387 via line-by-line check of t
   - **Adversarial direction (Stage 4 T4.6):** `u_adv = Σ_{i≥2} c_i · PC_i` (from the LASSO fit above), then **explicitly project AA out**: `u_adv ← u_adv − (⟨u_adv, AA⟩ / ||AA||²) · AA`. Needed because PCs 2..k are orthogonal to PC1 but not strictly to AA. L2-normalize, scale to lmsys-chat-1m norm.
   - **Stage 5 composition is unaffected** — composition is about role-vector arithmetic in the d_model activation space, independent of the AA vs PC1 choice.
 - **Quantization policy (2-GPU hardware constraint — 2× RTX 5090 = 64 GB):** all subjects and judges run quantized. Preference order per model (decided Stage 0 T0.4 / T0.5):
-  1. Official-provider **fp8** checkpoint on HF (e.g., `Qwen/...-FP8`, `neuralmagic/...-FP8`) — vLLM/SGLang native, hardware-accelerated on 5090 Ada tensor cores. Best quality × throughput.
+  1. Official-provider **fp8** checkpoint on HF (e.g., `Qwen/...-FP8`, `neuralmagic/...-FP8`) — vLLM/SGLang native, hardware-accelerated on 5090 **Blackwell** (GB202) fp8 tensor cores (E4M3/E5M2). Best quality × throughput.
   2. Official-provider or community **AWQ 4-bit** — vLLM native, good quality and speed.
   3. **Unsloth fp8 or AWQ uploads** (NOT their GGUF line).
   4. **Self-calibrated AWQ** via `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model.
   - **Avoid:** GGUF (llama.cpp format; vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (unverified at extraction fidelity).
   - **fp8 ≠ GGUF Q8_0.** fp8 is an 8-bit floating-point format with hardware tensor-core support in vLLM. GGUF Q8_0 is an 8-bit integer format native to llama.cpp — incompatible with our vLLM throughput target. Do NOT conflate; future agents, read this carefully.
+  - **fp4 (NVFP4) note:** Blackwell also has native fp4 tensor cores. vLLM fp4 support is bleeding-edge as of 2026-04; not the default path. Reserved as a possible fallback for Stage 7 Ext 9 Llama 3.3 70B on 2× 5090 (70B × fp4 ≈ 35 GB weights; might fit with tight KV). Do not use in core stages without user sign-off.
 - **Quantization validity check (required before Stage 3 T3.1 extraction per subject):**
   - **Tier 1 subjects (paper released PC1 direction on HF):** project test activations onto paper's bf16 PC1 direction. Run 25 Assistant-like roles (researcher, debugger, consultant, analyst, writer, …) + 25 fantastical roles (bard, ghost, leviathan, eldritch, …) + default Assistant (no system prompt), ~2 rollouts each using paper's extraction questions. Extract mean-response-token activations at presumed middle layer. Pass if `(μ_assistant_projection − μ_fantastical_projection) / pooled_std > 1.5` AND default Assistant sits near the Assistant-like extreme.
   - **Tier 2 subjects (no paper reference):** (a) perplexity on 500 wikitext-v2 tokens within 5% of the model-card published bf16 perplexity; (b) qualitative role-response check on 5 test roles (diplomat, poet, hacker, therapist, skeptic) with manual read-through for semantic appropriateness.
@@ -182,3 +183,16 @@ These aren't locked — the agent running the relevant stage decides. But once d
 
 - **Decide yourself:** tooling versions, schemas, test organization, log format, batch sizes — anything listed in "Decide and log" above. Log the decision.
 - **Ask the user:** anything that changes Key Decisions in CLAUDE.md (models, eval benchmarks, statistical framework, threat model, judge choice, hardware), anything that affects the scope doc, anything that could change the project's headline claim.
+
+## Verify, don't guess — for fast-moving facts
+
+For **anything that changes faster than the agent's training cutoff**, web-verify before writing into code, configs, or `pyproject.toml`:
+- **Package versions** — check PyPI (`pip index versions <pkg>`) or the project's GitHub releases page for the latest tag. Do not write `vllm>=0.x.y` from memory.
+- **Hardware/kernel compatibility** — for Blackwell (sm_120) support in vLLM/SGLang/PyTorch/FlashAttention, check release notes and open issues on GitHub. Engine releases land monthly; stale knowledge about "Blackwell not supported yet" may be out of date.
+- **HuggingFace model IDs** — search HF directly (e.g., `huggingface.co/models?search=qwen3-32b`). Models get renamed, moved under different orgs, or gated. Confirm the exact `repo_id` and revision before loading.
+- **fp8 / AWQ checkpoint availability** — search HF per target model. Official providers (Qwen, Google, Meta, Neural Magic, Unsloth) publish quant variants on their own schedule.
+- **Paper artifacts** — for the assistant-axis HF release, check the actual repo structure rather than assuming which files exist.
+
+**How to log what you verified:** in `plans/decisions.md` entries, cite the specific URL you checked AND the date OR release tag / HF commit hash you saw. Example: `Source: https://pypi.org/project/vllm/ version 0.7.3 released 2026-03-18, selected for Blackwell sm_120 support per changelog`. This lets a later agent (or the user) reproduce the verification if anything goes wrong.
+
+**When NOT to web-verify:** facts that are stable and already in CLAUDE.md / scope doc / CONVENTIONS (the paper's methodology, our hypotheses, our statistical framework, our research goals). Those don't change. Fast-moving = dependencies, model IDs, hardware support status, quant availability, release notes.

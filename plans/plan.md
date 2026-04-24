@@ -14,6 +14,8 @@ If you're a new agent picking up this project:
 
 Do NOT read the full scope doc unless you specifically need research context (hypotheses, positioning, methodology details). The CLAUDE.md has all the operational decisions.
 
+**Also do NOT trust your training-cutoff knowledge for fast-moving facts** — package versions, Blackwell / sm_120 kernel support, exact HF model IDs, fp8/AWQ availability, engine release notes. Web-verify against PyPI, HuggingFace, GitHub releases, and official docs. See CONVENTIONS.md "Verify, don't guess" and log the cited URLs/tags in `plans/decisions.md`. This rule applies to every stage, not just Stage 0.
+
 ---
 
 ## Stage-to-stage handoff protocol
