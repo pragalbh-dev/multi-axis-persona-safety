@@ -166,8 +166,12 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > - Judge call (3-label role-expression): `max_out=8` (single digit); `max_in` tracks the role-specific template + response.
 
 ### Batch size & TP per model
-> _Decided Stage 0 after GPU util baseline test._
-> - Each subject and judge model: batch size, tensor_parallel_size, VRAM headroom
+> **Partial — Stage 0 T0.4/T0.5 smoke-load numbers recorded 2026-04-24.** All 4 subjects + judge load at TP=2 and generate coherent text on 5-prompt smoke tests. Full batch-size tuning happens in Stage 2 T2.2 (extraction harness) + T2.4 (judge batch driver). Results JSON per family at `results/stage_0_smoke/`.
+> - **gemma_2_27b** (Infermatic FP8-Dynamic): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 36s (cached) / 153s (cold). Gen 258 tok/s on 5 prompts × 128 max_tokens. VRAM ~62 GB total.
+> - **qwen_3_32b** (Qwen FP8, thinking OFF): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 48s / 101s. Gen 166 tok/s. VRAM ~50 GB estimated.
+> - **gemma_4_31b** (RedHatAI FP8-block, TRITON_ATTN, trust_remote_code=True): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 74-80s / 152s. Gen 138 tok/s (thinking OFF) to 258 tok/s (thinking ON, longer outputs). VRAM ~50 GB.
+> - **qwen_3_6_27b** (Qwen FP8, judge role): TP=2, gpu_mem_util=**0.70**, enforce_eager=**true**, max_model_len=**1024**. 0.85 and 0.75 both OOM at startup because this is a multimodal arch (`Qwen3_5ForConditionalGeneration` with vision_config). Load 100s. Gen 8.6 tok/s — slow due to enforce_eager + default-on thinking output; Stage 2 T2.0 must set `enable_thinking=False` in judge chat-template kwargs and re-tune. VRAM 50.1 GB (symmetric 25 GB/GPU).
+> - **Across-run VRAM-delta instrumentation caveat:** smoke_load's baseline-subtract per-run is polluted when a previous run's vLLM process didn't fully release state (resource-tracker leaks 6 semaphores per tear-down, per the script output). First-in-batch or solo-process readings are accurate; subsequent runs in the same Python process under-report delta VRAM. For Stage 2 batch-size tuning, spawn each model in a fresh subprocess.
 
 ### Config schema per experiment
 > _Decided Stage 2 when `configs/experiment_template.yaml` is finalized. Record minimal required fields + optional fields._

@@ -86,14 +86,32 @@ def smoke_one(family: str, cfg: dict, thinking_variant: str | None = None) -> di
     print(f"  TP: {cfg['tensor_parallel_size']}  attn: {os.environ.get('VLLM_ATTENTION_BACKEND', 'default')}")
     print(f"  trust_remote_code: {cfg.get('trust_remote_code', False)}  chat_template_kwargs: {ctk}")
 
-    torch.cuda.reset_peak_memory_stats()
+    # Use pynvml for driver-level VRAM (cross-process — torch.max_memory_allocated
+    # reports 0 when vLLM uses TP>1 subprocesses).
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        # CUDA_VISIBLE_DEVICES=2,3 means local indices 0,1 map to physical 2,3
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
+        nvml_handles = [pynvml.nvmlDeviceGetHandleByIndex(int(idx)) for idx in visible if idx.strip()]
+    except Exception:
+        nvml_handles = []
+
+    def _read_vram_gb() -> list[float]:
+        if not nvml_handles:
+            return []
+        return [pynvml.nvmlDeviceGetMemoryInfo(h).used / 1e9 for h in nvml_handles]
+
+    baseline_vram = _read_vram_gb()
+
     t0 = time.time()
     llm = LLM(
         model=cfg["hf_id"],
         tensor_parallel_size=cfg["tensor_parallel_size"],
         gpu_memory_utilization=cfg.get("gpu_memory_utilization", 0.85),
         trust_remote_code=cfg.get("trust_remote_code", False),
-        max_model_len=2048,
+        max_model_len=cfg.get("max_model_len", 2048),
+        enforce_eager=cfg.get("enforce_eager", False),
         seed=42,
     )
     t_load = time.time() - t0
@@ -107,10 +125,9 @@ def smoke_one(family: str, cfg: dict, thinking_variant: str | None = None) -> di
     outputs = llm.generate(prompts, sp)
     t_gen = time.time() - t1
 
-    # Per-rank peak memory (sum across GPUs visible to this process)
-    peak_per_gpu = []
-    for i in range(torch.cuda.device_count()):
-        peak_per_gpu.append(torch.cuda.max_memory_allocated(i) / 1e9)
+    # Peak VRAM measured immediately after gen, via NVML driver readings
+    peak_vram = _read_vram_gb()
+    peak_per_gpu = [round(p - b, 3) for p, b in zip(peak_vram, baseline_vram)] if baseline_vram else []
 
     out_tokens = sum(len(o.outputs[0].token_ids) for o in outputs)
     toks_per_sec = out_tokens / t_gen if t_gen > 0 else float("nan")
@@ -170,8 +187,10 @@ def main() -> None:
         else:
             variants = [None]
         for v in variants:
-            stats = smoke_one(fam, cfg, thinking_variant=v)
-            out_file = OUT_DIR / f"{stats['family']}{'__' + v if v else ''}.json"
+            v_str = str(v) if v is not None else None  # defensive against YAML on/off -> bool
+            stats = smoke_one(fam, cfg, thinking_variant=v_str)
+            suffix = f"__thinking_{v_str}" if v_str else ""
+            out_file = OUT_DIR / f"{stats['family']}{suffix}.json"
             out_file.write_text(json.dumps(stats, indent=2))
             print(f"  wrote {out_file}")
             summary.append(stats)

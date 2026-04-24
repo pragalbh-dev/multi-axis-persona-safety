@@ -42,7 +42,7 @@ gemma_4_31b:
   trust_remote_code: true             # Gemma 4 is multimodal with custom ops
   attention_backend: TRITON_ATTN      # vLLM #40677: FLASHINFER breaks Gemma 4 on Blackwell
   chat_template_kwargs: {}            # per-call override for thinking ON/OFF (see smoke_load)
-  thinking_modes: [on, off]           # test both
+  thinking_modes: ["on", "off"]       # quoted: bare on/off are YAML booleans
   notes: |
     Community fp8-block (compressed-tensors float-quantized).
     Gemma4ForConditionalGeneration (multimodal); we use text-only.
@@ -54,14 +54,19 @@ qwen_3_6_27b:
   hf_id: Qwen/Qwen3.6-27B-FP8
   base_hf_id: Qwen/Qwen3.6-27B
   tensor_parallel_size: 2
-  gpu_memory_utilization: 0.85
+  gpu_memory_utilization: 0.70         # 0.60 had no KV room; 0.85/0.75 overshot during warmup. Sweet spot w/ enforce_eager.
   trust_remote_code: false
   attention_backend: null
+  enforce_eager: true                   # skip CUDA graph capture (saves ~2 GB)
+  max_model_len: 1024
   chat_template_kwargs: {}
   notes: |
     Official Qwen fp8, released 2026-04-22, last modified 2026-04-24.
     Qwen3_5ForConditionalGeneration multimodal architecture; text-only use.
     64-layer text transformer (hidden 5120). No thinking mode (non-thinking family).
+    Multimodal vision weights load even for text-only use. Stage 0 smoke OOMed
+    at gmu=0.85 AND 0.75; at 0.60 + enforce_eager + max_model_len=1024 it fits.
+    For judge use (input < 1024 tokens typical), this is adequate.
 
 # Cross-check judge reuses the gemma_4_31b entry above with thinking OFF and
 # self-preference enforcement (skip when subject is Gemma 4 31B).
