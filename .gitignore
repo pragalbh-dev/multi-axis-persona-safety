@@ -1,6 +1,6 @@
-# Data and results (too large for git)
-data/
-results/
+# Data and results (too large for git) — anchored to repo root so src/data/ stays tracked.
+/data/
+/results/
 *.pt
 *.safetensors
 *.bin
