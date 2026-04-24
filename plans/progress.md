@@ -123,3 +123,78 @@ Copy, fill, append at the **end** of this file when a stage completes. Do not ed
   - **Stage 7 Ext 9 added:** Llama 3.3 70B reproduction at fp8 TP=4, replay Stages 3/4/6, extend cross-model matrix to 5 subjects / 10 pairs. Scope locked so if GPUs free up mid-project we can execute immediately.
   - **plan.md** subject-count note updated; scope doc left aspirational (still lists 3 Tier 1). CLAUDE.md reflects hardware-constrained execution variant. If GPUs free up and Ext 9 runs, scope-doc framing stays correct without restructuring.
   - **Compute implications:** Stage 3 T3.5.5 capability baselines = 4 subjects × ~2 hr ≈ 8 hr. Stage 3 T3.6 safety eval baselines = 4 subjects × 1,100 prompts ≈ 6 hr. Stage 4 Tier-2 capping-range sweep (T4.0) = 2 Tier 2 subjects × 6-8 hr ≈ 16 hr. Total core-stage budget roughly ~30% smaller than the 5-subject plan.
+
+## Stage 0 → Stage 1 Handoff — 2026-04-24
+
+**Artifacts produced:**
+
+*Env scaffold:*
+- `pyproject.toml`, `uv.lock`, `.python-version` (3.12), `.venv/` — `vllm==0.19.1`, `torch==2.10.0+cu128`, `transformers==5.6.2`, `transformer-lens==3.0.0`, `nnsight==0.4+`, plus `hf-transfer`, `pynvml`, `pandas`, `pyarrow`, `scikit-learn`, `plotly`, `dash`, `dev: ruff/mypy/pytest`.
+- `.env.example` committed; `.env` gitignored with `HF_TOKEN` (account `ub0001`, Gemma-2 license accepted).
+- `src/utils/env.py` — hard-pins `CUDA_VISIBLE_DEVICES=2,3` at import; raises if anything widens.
+- Dir skeleton: `src/{extraction,steering,evaluation,analysis,visualization,utils,experiments,data}/`, `configs/`, `data/{paper_artifacts,eval,cache/*}/`, `tests/{unit,integration}/`, `scripts/`, `external/`, `notebooks/`.
+
+*Paper artifacts (`data/paper_artifacts/`, gitignored):*
+- `extraction_questions.json` — 240 questions from paper's JSONL.
+- `default_assistant_system_prompts.json` — 5 variants from `roles/instructions/default.json` (incl. empty string).
+- `assistant_axis_vectors/` — full 1.2 GB HF dataset `lu-christina/assistant-axis-vectors`: all-layer AA direction `[n_layers, d_model]` bf16 + 275 role + 240 trait vectors + default vector + capping_config per Tier 1 subject. **Gemma 2 27B has no capping_config.pt** (must transcribe from paper Appendix F). **No raw rollouts released** — τ-calibration must be regenerated in Stage 3 T3.1.
+
+*Eval datasets (`data/eval/`, gitignored):*
+- `ifeval/` (541, train split, `google/IFEval@966cd89`)
+- `mmlu_pro_1400/` (1400 seeded subsample, `TIGER-Lab/MMLU-Pro@54611cd`)
+- `gsm8k_1000/` (1000 seeded subsample, `openai/gsm8k@740312a` main/test)
+- `eq_bench/` (171 validation, `pbevan11/EQ-Bench@9ce8e5f`)
+- `dan_jailbreak/` — primary safety set, **DAN in-the-wild 1,100 stratified** (13-cat, 84–85/cat) via subagent. HF + GitHub sources pinned in `manifest.json`.
+- `reconstructed_jailbreak/smoke_26/` — smoke output from the Shah-reconstructor utility.
+
+*Paper-derived configs (`configs/`):*
+- `judge_prompt.yaml` — **NOT WRITTEN**. Deferred to Stage 2 T2.0 (9-category harm prompt needs paper Appendix D.2.2 transcription; not present in either starting repo).
+- `role_expression_prompt.yaml` — 0-3 rubric template (paper Appendix A pattern, per-role `role_description` fill-in).
+- `paper_capping_ranges.yaml` — Qwen 3 32B (46–53, center 49.5, width 8), Llama 3.3 70B (56–71, center 63.5, width 16) verbatim from paper §5.1.2. Gemma 2 27B capping layers: TODO from paper Appendix F before Stage 4 T4.0.
+- `subjects.yaml` — all 4 subjects + judge with verified HF IDs, TP, attention backend, chat-template kwargs, per-model tuning.
+- `eval_sizes.yaml` — p50/p95/p99 input lens × `max_in`/`max_out` per (dataset, family); 20 entries.
+- `model_hooks.yaml` — post-MLP residual hook paths per family for TL + nnsight; Gemma 4 thinking-span extraction rule documented (empirical confirmation in Stage 3 T3.1).
+
+*Eval infrastructure:*
+- `src/evaluation/judge_batch.py` — template-agnostic phased judge driver (load → classify → tear down).
+- `src/data/build_dan_jailbreak.py`, `src/data/reconstruct_shah_jailbreaks.py` — primary-set downloader + secondary-set synthesizer.
+- `scripts/{download_eval_datasets,token_distribution_audit,smoke_load,phased_pipeline_smoke}.py`.
+
+*Verification artifacts (`results/stage_0_smoke/`, gitignored):*
+- Per-family smoke JSON × 5 (load seconds, tokens/sec, peak VRAM, sample output).
+- `phase{1,2,3}_*.parquet` — end-to-end phased-pipeline dry-run output (50 prompts × Gemma 2 → 50 labels × Qwen 3.6 → 25 cross-check × Gemma 4). 100% parse rate, 100% inter-judge agreement (synthetic prompts are easy — real jailbreaks will vary).
+
+**Decisions locked this stage (see `plans/decisions.md` for full entries):**
+- **Engine = vLLM 0.19.1** (stable, PyPI 2026-04-18). Prerelease 0.20.0 tagged but not promoted; 0.19.1 has Qwen3_5 + Gemma4 arch classes + Blackwell sm_120 fp8 GEMM (from 0.19.0). Torch 2.10.0+cu128 transitively.
+- **Python = 3.12.0** (pyenv).
+- **Gemma 2 27B FP8 = `Infermatic/gemma-2-27b-it-FP8-Dynamic`** — no official Google fp8 exists; `nm-testing/` and `neuralmagic/` variants don't exist on HF.
+- **Qwen 3 32B = `Qwen/Qwen3-32B-FP8`** (official; thinking OFF via chat_template_kwargs).
+- **Gemma 4 31B = `RedHatAI/gemma-4-31B-it-FP8-block`** (compressed-tensors; `trust_remote_code=True`; **must use TRITON_ATTN** per vLLM #40677 — FLASHINFER breaks Gemma 4 on Blackwell).
+- **Qwen 3.6-27B judge = `Qwen/Qwen3.6-27B-FP8`** — multimodal `Qwen3_5ForConditionalGeneration`, text-only use. For judge role: `gpu_memory_utilization=0.70` + `enforce_eager=True` + `max_model_len=1024` + `enable_thinking=False` (defaults to thinking ON — slow otherwise). 0.85 and 0.75 both OOMed during warmup.
+- **Primary jailbreak set = DAN (TrustAIRLab/in-the-wild-jailbreak-prompts)** — Shah et al. 2311.03348 not publicly released; DAN is structurally equivalent and scientifically stronger (in-the-wild > synthetic). Reconstructor utility provided for secondary/confirmatory set.
+
+**Gotchas / surprises:**
+- **Qwen 3.6-27B and Gemma 4 31B are multimodal** (`*ForConditionalGeneration` with `vision_config`). Weights load even for text-only use → +~10 GB/GPU vs pure-text peers. Multimodal arch also appears not to TP-split vision weights symmetrically; Stage 3 T3.1 hooks need `model.language_model.layers[L].output` not `model.layers[L].output`.
+- **vLLM TP=2 subprocess tear-down doesn't fully release VRAM** — sequential smoke loads OOMed on the 4th or 5th model even with `del llm; torch.cuda.empty_cache()`. Resource-tracker warns of 6 leaked semaphores per run. Solution for Stage 2+: spawn each model in a fresh subprocess (e.g., via `subprocess.run([sys.executable, "-c", ...])`) rather than looping in-process.
+- **YAML `on`/`off` are reserved boolean aliases** — quote as `"on"`/`"off"` in configs if you want strings.
+- **`torch.cuda.max_memory_allocated()` is invisible across vLLM TP subprocesses** — use pynvml (driver-level) for cross-process VRAM. Per-run baseline subtraction is polluted by leftover state; only first-in-batch or solo-process readings are accurate.
+- **Qwen 3.6-27B defaults to thinking output** despite being listed as "non-thinking family" in some sources. `enable_thinking=False` required for judge use.
+- **Gemma 2 27B has no pre-computed capping_config.pt** on the paper's HF release — we must transcribe from paper Appendix F before Stage 4 T4.0.
+- **hf-transfer NOT installed by default** with a fresh uv env; added as runtime dep. Raw HF downloads were ~1 MB/s without it, ~27 MB/s with it. Set `HF_HUB_ENABLE_HF_TRANSFER=1` env var (or add to a shell rc).
+- **GPUs 0 and 1 run a parallel `nvidia/Gemma-4-31B-IT-NVFP4` vLLM service on port 8000** for an unrelated LoRA-tuning workload. DO NOT TOUCH. Our project is scoped to GPUs 2,3 only via `src/utils/env.py`.
+
+**Open items for Stage 1:**
+- Stage 2 T2.0 must transcribe the 9-category harm judge prompt from paper Appendix D.2.2 (not present in any starting repo) → `configs/judge_prompt.yaml`.
+- Stage 2 T2.0 must lock `enable_thinking=False` in the judge chat-template kwargs and ideally tune `compilation_config` to allow some CUDA graph capture (currently fully eager → slow). Target: ≥ 50 tok/s.
+- Stage 4 T4.0 must transcribe Gemma 2 27B capping ranges from paper Appendix F — `configs/paper_capping_ranges.yaml` has it as explicit TODO.
+- Stage 2 T2.1 factors the subject/judge loading pattern from `smoke_load.py` + `judge_batch.py` into a reusable service harness that spawns subprocesses per model (avoids the VRAM-leak between loads).
+- Stage 3 T3.1 must confirm the hook-point YAML paths empirically on first extraction run — `configs/model_hooks.yaml` has the conventions but no empirical verification on our fp8 weights.
+- Stage 2 T2.4.5 runs the 200-sample GPT-5.5 pseudo-ground-truth judge validation (only external API spend budgeted).
+
+**Pointers into CONVENTIONS.md updated:**
+- `Python version` — 3.12.0.
+- `Inference engine` — vLLM 0.19.1 + torch 2.10.0+cu128.
+- `Model IDs` — all 4 subjects + judge HF IDs with quant provenance.
+- `Eval dataset IDs` — 4 datasets with revision SHAs; Shah deferred, DAN primary via subagent output.
+- `Max input/output lengths per task` — audit table summarized.
+- `Batch size & TP per model` — per-family load time / tokens/sec / VRAM / tuning flags.

@@ -12,9 +12,16 @@ Extending the Assistant Axis paper (Lu et al., arXiv 2601.10387) to study the sa
 
 ## Current State
 
-**Active stage:** Stage 0 — Environment Setup
-**Active task:** Not started
-**Last updated:** 2026-04-22
+**Active stage:** Stage 1 — Architecture & wireframing
+**Active task:** T1.1 (start)
+**Last updated:** 2026-04-24
+
+Stage 0 complete. See `plans/progress.md` "Stage 0 → Stage 1 Handoff" block for artifact manifest, locked decisions, gotchas, and open items. Key results:
+- Env: uv + Python 3.12 + vLLM 0.19.1 + torch 2.10+cu128 on 2× RTX 5090 (GPUs 2,3); all 4 subjects + judge load + generate coherently.
+- Paper artifacts: 240 Qs, 5 default-Assistant prompts, 1.2 GB HF axis dataset.
+- Eval data: IFEval/MMLU-Pro/GSM8k/EQ-Bench + DAN 1,100 (primary). Shah reconstruction utility smoke-tested.
+- Infra: `src/evaluation/judge_batch.py` + `src/data/{build_dan_jailbreak.py, reconstruct_shah_jailbreaks.py}` + scripts/.
+- Phased pipeline (subject → judge → cross-check) verified end-to-end on 50 prompts in 4.3 min.
 
 Read `plans/plan.md` for the full stage overview. Read the active stage plan for task details.
 
