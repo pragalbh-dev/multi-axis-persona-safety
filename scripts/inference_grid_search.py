@@ -78,15 +78,22 @@ PROFILES: dict[str, dict[str, Any]] = {
 # inner binary search per outer cell — try descending from 512 until OOM is
 # avoided. The highest survivor wins; tokens/sec increases monotonically with
 # max_num_seqs up to the KV cache budget.
+#
+# Floor lowered to 0.70 after Stage 1 / prep first-attempt grid found that
+# bf16 + TP=4 + Gemma 2 27B OOMs even at gmu=0.85 / max_num_seqs=32. vLLM's
+# memory profiler at TP=4 underestimates by ~4 GB because of NCCL communication
+# buffers + transient activation memory that scale with TP. We need to back
+# off util to leave that headroom explicitly.
 OUTER_CELLS: list[dict[str, Any]] = [
-    {"gpu_memory_utilization": 0.92, "enforce_eager": False},  # primary candidate
-    {"gpu_memory_utilization": 0.95, "enforce_eager": False},  # higher util — does it still fit?
-    {"gpu_memory_utilization": 0.85, "enforce_eager": False},  # safety baseline
-    {"gpu_memory_utilization": 0.92, "enforce_eager": True},   # control — quantify CUDA graph speedup
+    {"gpu_memory_utilization": 0.85, "enforce_eager": False},  # primary candidate
+    {"gpu_memory_utilization": 0.80, "enforce_eager": False},  # known-safer baseline
+    {"gpu_memory_utilization": 0.75, "enforce_eager": False},  # if even 0.80 OOMs
+    {"gpu_memory_utilization": 0.90, "enforce_eager": False},  # push if 0.85 fits
+    {"gpu_memory_utilization": 0.85, "enforce_eager": True},   # control — quantify CUDA graph speedup
 ]
 
 # Probe values for max_num_seqs binary descent. Try highest first; first fit wins.
-MAX_SEQS_PROBE: list[int] = [512, 256, 128, 64, 32]
+MAX_SEQS_PROBE: list[int] = [512, 256, 128, 64, 32, 16]
 
 
 # ----------------- workload sampler -----------------
@@ -252,6 +259,18 @@ def _cell_label(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
     )
 
 
+def _kill_vllm_stragglers() -> None:
+    """SIGKILL any leftover VLLM:: subprocesses + free GPU memory.
+
+    When a vLLM TP=N init fails partway, the EngineCore + N Worker_TP processes
+    can survive the parent's exit and hold all GPU memory — making subsequent
+    grid cells OOM before they even start to load. Belt-and-braces clean up.
+    """
+    for pat in ("VLLM::Worker_TP", "VLLM::EngineCore", "vllm.engine"):
+        subprocess.run(["pkill", "-9", "-f", pat], check=False)
+    time.sleep(2)
+
+
 def _spawn(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: bool) -> tuple[int, Path]:
     """Run a single cell in a fresh subprocess. Returns (returncode, out_path)."""
     label = _cell_label(family, profile, gmu, max_seqs, enforce_eager)
@@ -264,22 +283,33 @@ def _spawn(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: 
     ]
     if enforce_eager:
         cmd.append("--enforce-eager")
+    # Pass through env + add allocator hint that vLLM itself recommends in OOM
+    # error messages: expandable_segments reduces memory fragmentation.
+    child_env = os.environ.copy()
+    child_env["PYTORCH_ALLOC_CONF"] = (
+        child_env.get("PYTORCH_ALLOC_CONF", "") + "," if child_env.get("PYTORCH_ALLOC_CONF") else ""
+    ) + "expandable_segments:True"
     try:
-        r = subprocess.run(cmd, check=False, timeout=1200)
-        if r.returncode != 0 and not out_path.exists():
-            out_path.write_text(json.dumps({
-                "family": family, "profile": profile,
-                "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
-                "status": "fail", "returncode": r.returncode,
-            }, indent=2))
-        return r.returncode, out_path
+        r = subprocess.run(cmd, env=child_env, check=False, timeout=1200)
+        rc = r.returncode
     except subprocess.TimeoutExpired:
+        rc = -1
         out_path.write_text(json.dumps({
             "family": family, "profile": profile,
             "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
             "status": "timeout",
         }, indent=2))
-        return -1, out_path
+
+    # Always sweep stragglers, even on success — be defensive.
+    _kill_vllm_stragglers()
+
+    if rc != 0 and not out_path.exists():
+        out_path.write_text(json.dumps({
+            "family": family, "profile": profile,
+            "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
+            "status": "fail", "returncode": rc,
+        }, indent=2))
+    return rc, out_path
 
 
 def _binary_descent_max_seqs(family: str, profile: str, gmu: float, enforce_eager: bool) -> dict | None:
