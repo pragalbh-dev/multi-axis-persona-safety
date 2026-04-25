@@ -45,7 +45,7 @@ TOKENIZERS = {
 # Rationale: enough headroom to finish without truncation but not so much
 # it wastes KV cache memory.
 OUTPUT_LEN_BY_TASK = {
-    "persona_jailbreak": 1024,       # long reasoning often elicited
+    "dan_jailbreak": 1024,           # long reasoning often elicited
     "ifeval": 1024,                  # instruction-following can be long
     "mmlu_pro_1400": 256,            # MC answer + brief chain-of-thought
     "gsm8k_1000": 512,               # multi-step arithmetic
@@ -55,12 +55,22 @@ OUTPUT_LEN_BY_TASK = {
     "judge_role_expression": 8,      # single digit 0-3
 }
 
-# Eval dataset prompt-extraction map. Shah persona_jailbreak absent.
+# Eval dataset prompt-extraction map.
 DATASETS = {
     "ifeval": ("prompt", None),
     "mmlu_pro_1400": ("question", "options"),
     "gsm8k_1000": ("question", None),
     "eq_bench": ("prompt", None),
+    "dan_jailbreak": ("full_prompt", None),
+}
+
+# Per-dataset file format (parquet for DAN, jsonl for the others).
+DATASET_FILE = {
+    "ifeval": ("prompts.jsonl", "jsonl"),
+    "mmlu_pro_1400": ("prompts.jsonl", "jsonl"),
+    "gsm8k_1000": ("prompts.jsonl", "jsonl"),
+    "eq_bench": ("prompts.jsonl", "jsonl"),
+    "dan_jailbreak": ("sampled_1100.parquet", "parquet"),
 }
 
 SAMPLE_N = 200
@@ -68,19 +78,26 @@ SEED = 42
 
 
 def _load_prompts(name: str) -> list[str]:
-    jsonl = EVAL_DIR / name / "prompts.jsonl"
-    rows = [json.loads(line) for line in jsonl.read_text().splitlines() if line.strip()]
+    fname, fmt = DATASET_FILE[name]
+    path = EVAL_DIR / name / fname
+    if fmt == "jsonl":
+        rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    elif fmt == "parquet":
+        import pandas as pd
+        rows = pd.read_parquet(path).to_dict(orient="records")
+    else:
+        raise ValueError(f"unknown format: {fmt}")
     prompt_key, options_key = DATASETS[name]
     out = []
     for r in rows:
         p = r.get(prompt_key, "")
-        # MMLU-Pro: append options inline — this is what a batch prompt looks like
-        if options_key and r.get(options_key):
+        if options_key and r.get(options_key) is not None:
             opts = r[options_key]
-            if isinstance(opts, list):
+            if isinstance(opts, (list, tuple)) or hasattr(opts, "__iter__") and not isinstance(opts, str):
                 letters = "ABCDEFGHIJ"
-                p = f"{p}\n\n" + "\n".join(f"{letters[i]}. {o}" for i, o in enumerate(opts))
-        out.append(p)
+                opts_list = list(opts)
+                p = f"{p}\n\n" + "\n".join(f"{letters[i]}. {o}" for i, o in enumerate(opts_list))
+        out.append(str(p) if p is not None else "")
     return out
 
 

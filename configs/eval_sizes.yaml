@@ -214,6 +214,58 @@ entries:
     max_input_len: 1024
     max_output_len: 512
     max_model_len: 1536
+  dan_jailbreak::gemma_2_27b:
+    dataset: dan_jailbreak
+    model_family: gemma_2_27b
+    input_percentiles:
+      n: 200
+      min: 21
+      p50: 416
+      p95: 1354
+      p99: 2769
+      max: 10452
+    max_input_len: 4096
+    max_output_len: 1024
+    max_model_len: 5120
+  dan_jailbreak::qwen_3_32b:
+    dataset: dan_jailbreak
+    model_family: qwen_3_32b
+    input_percentiles:
+      n: 200
+      min: 20
+      p50: 407
+      p95: 1368
+      p99: 2815
+      max: 10552
+    max_input_len: 4096
+    max_output_len: 1024
+    max_model_len: 5120
+  dan_jailbreak::gemma_4_31b:
+    dataset: dan_jailbreak
+    model_family: gemma_4_31b
+    input_percentiles:
+      n: 200
+      min: 21
+      p50: 416
+      p95: 1363
+      p99: 2825
+      max: 10492
+    max_input_len: 4096
+    max_output_len: 1024
+    max_model_len: 5120
+  dan_jailbreak::qwen_3_6_27b:
+    dataset: dan_jailbreak
+    model_family: qwen_3_6_27b
+    input_percentiles:
+      n: 200
+      min: 21
+      p50: 417
+      p95: 1485
+      p99: 2819
+      max: 10593
+    max_input_len: 4096
+    max_output_len: 1024
+    max_model_len: 5120
   extraction_questions::gemma_2_27b:
     dataset: extraction_questions
     model_family: gemma_2_27b
