@@ -186,6 +186,15 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
 
     sp = SamplingParams(temperature=0.7, top_p=0.9, max_tokens=p["output_max"], seed=42)
 
+    # Cold-start warmup: run 2 short prompts to amortize JIT compilation,
+    # kernel autotuning, and CUDA graph capture. Without this, the first
+    # generate() call's tokens/sec is artificially low. Output not measured.
+    t_warm_0 = time.time()
+    warmup_sp = SamplingParams(temperature=0.7, top_p=0.9, max_tokens=64, seed=42)
+    _ = llm.generate(prompts[:2], warmup_sp)
+    t_warm = time.time() - t_warm_0
+    print(f"[{cell_label}] warmup done in {t_warm:.1f}s", flush=True)
+
     t_gen_0 = time.time()
     outputs = llm.generate(prompts, sp)
     t_gen = time.time() - t_gen_0
@@ -202,6 +211,7 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
         "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
         "max_model_len": p["max_model_len"],
         "load_seconds": round(t_load, 2),
+        "warmup_seconds": round(t_warm, 2),
         "gen_seconds": round(t_gen, 2),
         "input_tokens": in_tokens,
         "output_tokens": out_tokens,
