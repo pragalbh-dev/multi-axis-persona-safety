@@ -29,8 +29,9 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from datasets import load_dataset
@@ -81,7 +82,7 @@ def _stratified_sample(
     per_cat = {c: base + (1 if i < extra else 0) for i, c in enumerate(cat_order)}
 
     persona_pool = personas[["persona_id", "persona_text"]].to_dict(orient="records")
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     next_prompt_id = 0
     for cat in cats:
         n = per_cat[cat]
@@ -152,7 +153,9 @@ def build(output_dir: Path, seed: int = DEFAULT_SEED) -> None:
     ].copy()
     questions_path = output_dir / "raw_questions.parquet"
     questions_out.to_parquet(questions_path, index=False)
-    print(f"      wrote {len(questions_out)} rows, {questions_out.content_policy_name.nunique()} cats -> {questions_path}")
+    print(
+        f"      wrote {len(questions_out)} rows, {questions_out.content_policy_name.nunique()} cats -> {questions_path}"
+    )
 
     print(f"[3/4] Stratified sampling to {TARGET_TOTAL} pairs (seed={seed})")
     sampled = _stratified_sample(questions_out, personas_out, TARGET_TOTAL, seed)
@@ -161,12 +164,14 @@ def build(output_dir: Path, seed: int = DEFAULT_SEED) -> None:
     cat_counts = sampled["category"].value_counts().to_dict()
     cat_counts_sorted = dict(sorted(cat_counts.items()))
     print(f"      wrote {len(sampled)} rows -> {sampled_path}")
-    print(f"      per-category counts: min={min(cat_counts.values())}, max={max(cat_counts.values())}, mean={sum(cat_counts.values())/len(cat_counts):.2f}")
+    print(
+        f"      per-category counts: min={min(cat_counts.values())}, max={max(cat_counts.values())}, mean={sum(cat_counts.values()) / len(cat_counts):.2f}"
+    )
 
     print("[4/4] Writing manifest.json")
     manifest = {
         "schema_version": "1.0",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "seed": seed,
         "target_total": TARGET_TOTAL,
         "n_categories": N_CATEGORIES,
@@ -188,9 +193,15 @@ def build(output_dir: Path, seed: int = DEFAULT_SEED) -> None:
         "category_labels": sorted(questions_out["content_policy_name"].unique().tolist()),
         "stratification_counts": cat_counts_sorted,
         "outputs": {
-            "raw_personas": str(personas_path.relative_to(output_dir.parent.parent.parent)) if output_dir.is_absolute() else str(personas_path),
-            "raw_questions": str(questions_path.relative_to(output_dir.parent.parent.parent)) if output_dir.is_absolute() else str(questions_path),
-            "sampled_1100": str(sampled_path.relative_to(output_dir.parent.parent.parent)) if output_dir.is_absolute() else str(sampled_path),
+            "raw_personas": str(personas_path.relative_to(output_dir.parent.parent.parent))
+            if output_dir.is_absolute()
+            else str(personas_path),
+            "raw_questions": str(questions_path.relative_to(output_dir.parent.parent.parent))
+            if output_dir.is_absolute()
+            else str(questions_path),
+            "sampled_1100": str(sampled_path.relative_to(output_dir.parent.parent.parent))
+            if output_dir.is_absolute()
+            else str(sampled_path),
         },
         "attack_template": "f'{persona_text}\\n\\n{question_text}' (two newlines)",
     }
@@ -202,7 +213,9 @@ def build(output_dir: Path, seed: int = DEFAULT_SEED) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,

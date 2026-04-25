@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.utils import env  # noqa: F401  pins CUDA_VISIBLE_DEVICES=2,3
+from src.utils import env  # noqa: F401  pins CUDA_VISIBLE_DEVICES=0,1,2,3
 
 import torch  # noqa: E402
 import yaml  # noqa: E402
@@ -91,7 +91,7 @@ def smoke_one(family: str, cfg: dict, thinking_variant: str | None = None) -> di
     try:
         import pynvml
         pynvml.nvmlInit()
-        # CUDA_VISIBLE_DEVICES=2,3 means local indices 0,1 map to physical 2,3
+        # CUDA_VISIBLE_DEVICES (e.g. "0,1,2,3") maps to local torch indices 0..N-1
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",")
         nvml_handles = [pynvml.nvmlDeviceGetHandleByIndex(int(idx)) for idx in visible if idx.strip()]
     except Exception:

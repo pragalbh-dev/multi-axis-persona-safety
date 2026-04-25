@@ -12,12 +12,20 @@ Extending the Assistant Axis paper (Lu et al., arXiv 2601.10387) to study the sa
 
 ## Current State
 
-**Active stage:** Stage 1 — Architecture & wireframing
-**Active task:** T1.1 (start)
-**Last updated:** 2026-04-24
+**Active stage:** Stage 2 — Core infrastructure
+**Active task:** T2.0 (start) — transcribe paper's 9-cat judge prompt to `configs/judge_prompt.yaml` + Gemma 2 27B Appendix F capping range. See `plans/stage-2-infrastructure.md` "Execution plan" for the bf16/TP=4 sequence and the 11 resolved decisions (D1–D11).
+**Last updated:** 2026-04-25
 
-Stage 0 complete. See `plans/progress.md` "Stage 0 → Stage 1 Handoff" block for artifact manifest, locked decisions, gotchas, and open items. Key results:
-- Env: uv + Python 3.12 + vLLM 0.19.1 + torch 2.10+cu128 on 2× RTX 5090 (GPUs 2,3); all 4 subjects + judge load + generate coherently.
+Stage 1 complete (design-only, runs in parallel with any remaining Stage 0 smoke loads). See `plans/progress.md` "Stage 1 → Stage 2 Handoff" for artifact manifest. Key locked schemas (do not modify without a `decisions.md` entry):
+- `ExperimentConfig` (pydantic v2) at `src/utils/config.py` ↔ `configs/experiment_template.yaml`.
+- `PER_PROMPT_COLUMNS` (20 cols) at `src/evaluation/types.py` — every safety/capability writer hits this superset.
+- Activation cache layout: `data/cache/activations/{model_id}/{dataset}/L{layer}.{safetensors,meta.json}`.
+- Result-dir contract: `results/expN_*/{config.yaml,manifest.json,metrics.json,details.parquet,figures/}` enforced by `init_results_dir`.
+- Steering + capping wrap `external/assistant-axis::ActivationSteering` via `src/steering/steerer.py` (`from_config`, `cap_and_steer`, `multi_axis_cap`).
+- Figure registry: `src/visualization/figures.py::FIGURE_REGISTRY` ↔ `report/figures.md`.
+
+Stage 0 + Stage 1 lower-level history:
+- Env: uv + Python 3.12 + vLLM 0.19.1 + torch 2.10+cu128 on **4× RTX 5090** (GPUs 0,1,2,3 = 128 GB total); all 4 subjects + judge load + generate coherently. Reverted from the original 2-GPU/fp8 path on 2026-04-25 — see `plans/decisions.md`.
 - Paper artifacts: 240 Qs, 5 default-Assistant prompts, 1.2 GB HF axis dataset.
 - Eval data: IFEval/MMLU-Pro/GSM8k/EQ-Bench + DAN 1,100 (primary). Shah reconstruction utility smoke-tested.
 - Infra: `src/evaluation/judge_batch.py` + `src/data/{build_dan_jailbreak.py, reconstruct_shah_jailbreaks.py}` + scripts/.
@@ -30,13 +38,13 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 ## Key Decisions (locked — do not change without reading scope doc)
 
 ### Models
-- **Tier 1 (reproduce) — reduced to 2 subjects due to 2-GPU constraint:** Gemma 2 27B, Qwen 3 32B. Thinking mode **OFF** on Qwen 3 for fidelity to paper (§8.1 Limitations). **Llama 3.3 70B moved to Stage 7 Ext 9** — doesn't fit in 64 GB even at aggressive quantization; awaits GPU availability. For now we cite paper's Llama results when making the cross-model stability claim.
+- **Tier 1 (reproduce) — reduced to 2 subjects from paper's 3:** Gemma 2 27B, Qwen 3 32B. Thinking mode **OFF** on Qwen 3 for fidelity to paper (§8.1 Limitations). **Llama 3.3 70B deferred to Stage 7 Ext 9** — 70B at bf16 ≈ 140 GB exceeds the 128 GB total VRAM budget even with TP=4; Ext 9 runs Llama at fp8 (or NVFP4 fallback). For now we cite paper's Llama results when making the cross-model stability claim.
 - **Tier 2 core — promoted into Stages 3/4/6:** Gemma 4 31B Dense, run with thinking **ON and OFF**. Covers the paper's "frontier" + "reasoning" gaps (§8.1) without any new tooling — dense-transformer extraction works as-is. For reasoning mode: **extract activations at BOTH thinking tokens AND answer tokens** and compare PCAs.
 - **Total core subjects: 4** (Gemma 2 27B, Qwen 3 32B, Gemma 4 31B thinking-ON, Gemma 4 31B thinking-OFF). Cross-model PC1 stability claim now covers **6 pairs** — across architectures (Gemma, Qwen) AND generations (Gemma 2, Gemma 4) AND reasoning modes (thinking ON/OFF). Stronger in breadth than paper's 3-same-generation-Tier-1 even if fewer subjects total.
-- **All subjects run quantized** (see "Quantization policy" below) because bf16 doesn't fit on 2× 5090 for any 27B+ model with decent KV cache budget.
+- **All core subjects + primary judge run bf16 at TP=4** (see "Precision policy" below). Bf16 = paper's reference precision = no extraction-fidelity argument needed and no per-subject quant-validity gate.
 - **Tier 2 MoE — stays in Stage 7 Ext:** Qwen 3.6-35B-A3B MoE. Gated behind MoE-specific tooling: standard residual stream works (experts are aggregated into the residual), but we want per-expert activation extraction too, which requires a nnsight-backed custom hook pipeline (paper doesn't do this). This is a tooling-gated extension, not a methodology gap.
 - **Tier 2 rationale:** paper's §8.1 explicitly names frontier / MoE / reasoning as untested. Dense+reasoning (Gemma 4 31B, thinking ON/OFF) fills 2 of 3 gaps in core stages; MoE fills the third in extensions.
-- **Hardware:** 2× RTX 5090 available (32GB each = 64GB total). Two GPUs on the box are occupied by other workloads and NOT accessible. If they free up mid-project, Stage 7 Ext 9 (Llama 3.3 70B reproduction) gets unblocked.
+- **Hardware:** 4× RTX 5090 available (32 GB each = **128 GB total**). All 4 GPUs accessible to this project as of 2026-04-25 (the parallel LoRA-tuning workload on GPUs 0,1 has finished). The original 2-GPU constraint is historical; see `plans/decisions.md` 2026-04-25 fp8→bf16 entry.
 
 ### Evaluation
 - **Safety:** **two parallel datasets, every eval runs on both** (locked Stage 0 → Stage 1):
@@ -52,20 +60,16 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 - **Self-preference handling:** when Gemma 4 31B-it is the *subject*, skip Gemma-as-judge pass (use Qwen primary only).
 - **No recurring external API spend.** Judges self-hosted. GPT-5.5 is a one-time Stage 0 cost.
 
-### Quantization policy (2-GPU constraint)
-- **All subjects and judges run quantized.** bf16 does not fit on 2× 5090 for 27-35B models with practical KV cache.
-- **Preference order (Stage 0 T0.4 / T0.5 per model):**
-  1. **Official provider fp8** checkpoint on HF if available (e.g., `Qwen/...-FP8`, `google/...-fp8`, `neuralmagic/...-FP8`). vLLM / SGLang native, hardware-accelerated on 5090 **Blackwell** (GB202) fp8 tensor cores — same E4M3/E5M2 formats as Hopper/Ada, faster tensor cores than Ada. Best quality × throughput.
-  2. **Official provider or community AWQ 4-bit** (vLLM native). Good quality, good speed.
-  3. **Unsloth fp8 or AWQ uploads** (not their GGUF line). Fallback if #1 and #2 absent.
-  4. **Self-calibrated AWQ** using `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model. Safest, known provenance.
-- **Avoid:** GGUF (llama.cpp format, vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (untested at extraction fidelity).
+### Precision policy (4 GPUs, 128 GB total VRAM)
+- **Core stages run bf16 at TP=4** for all 4 subjects + the primary judge. Bf16 is the paper's reference precision, removes the extraction-fidelity argument, and removes the per-subject quant-validity gate. See `plans/decisions.md` 2026-04-25 fp8→bf16 entry for the revert from the original 2-GPU/fp8 plan.
+- **fp8 reserved for Stage 7 Ext 9** (Llama 3.3 70B; bf16 path doesn't fit). Ext 9 gets the original quant-preference order:
+  1. **Official-provider fp8** checkpoint on HF (e.g., `Qwen/...-FP8`, `neuralmagic/...-FP8`). vLLM-native, hardware-accelerated on 5090 **Blackwell** (GB202) fp8 tensor cores (E4M3/E5M2 formats).
+  2. **Official-provider or community AWQ 4-bit** (vLLM-native). Good quality, good speed.
+  3. **Unsloth fp8 or AWQ uploads** (not their GGUF line).
+  4. **Self-calibrated AWQ** via `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model.
+- **Avoid in all stages:** GGUF (llama.cpp format, vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (untested at extraction fidelity).
 - **fp8 ≠ GGUF Q8_0.** fp8 = 8-bit float with hardware tensor-core acceleration (vLLM native). GGUF Q8_0 = 8-bit int, llama.cpp format, incompatible with our throughput target. Do not conflate.
-- **Quantization validity check (required before Stage 3 extraction per subject):**
-  - For Tier 1 subjects where paper released a bf16 PC1 direction on HF (Stage 0 T0.7): load our quantized model, run ~2 rollouts each on 25 Assistant-like roles (researcher, debugger, consultant, …) + 25 fantastical roles (bard, ghost, leviathan, …) + default Assistant, using paper's extraction questions. Extract mean-response-token activations at the presumed middle layer. Project onto paper's PC1 direction. **Pass criterion:** Assistant-like group mean projects higher than fantastical group mean with separation `(μ_assistant − μ_fantastical) / pooled_std > 1.5`. Default Assistant projects near the Assistant-like extreme.
-  - For Tier 2 subjects (no paper reference): skip PC1-projection check; instead do (a) perplexity on 500 wikitext tokens (within 5% of model card's published bf16 perplexity) + (b) qualitative role-response check (prompt the model as "You are a diplomat" / "You are a poet" and verify outputs are semantically appropriate).
-  - Each subject's quant choice + validity numbers logged to `plans/decisions.md`.
-  - ~10 min per subject. Runs as Stage 3 T3.1 prelude; gates extraction.
+- **Quant-validity check (Ext 9 prerequisite only — no longer in core stages):** load the quantized model, run ~2 rollouts each on 25 Assistant-like + 25 fantastical roles + default Assistant, project mean-response-token activations onto paper's bf16 reference direction. Pass if `(μ_assistant − μ_fantastical) / pooled_std > 1.5` AND default Assistant projects near the Assistant-like extreme. ~10 min per subject. Per-subject quant choice + validity numbers logged to `plans/decisions.md`. Gates Ext 9 extraction; not run for bf16 core subjects.
 
 ### Inference & Serving
 - **Engine:** vLLM or SGLang — decided at Stage 0 based on day-0 support for all 5 target models + both judges. Log decision + reason in `plans/CONVENTIONS.md`.
@@ -73,11 +77,11 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 - **Target ≥90% GPU utilization** on steady-state runs. Tune batch size / KV cache / TP before proceeding if under.
 - **Sizing:** `max_input_len` and `max_output_len` set per task from a token-distribution audit (Stage 0 T0.2), not guessed. Larger than needed wastes KV-cache memory.
 - **Phased topology (not an always-on judge server):**
-  1. **Subject phase** — load subject model on all 4 GPUs, generate responses for every (prompt × condition) cell of the experiment, stash `(prompt_id, condition, response, activations)` rows to parquet, tear down the subject.
-  2. **Primary judge phase** — load Qwen 3.6-27B dense on all 4 GPUs (TP=4, or TP=2 × data_parallel=2 for higher throughput), batch-classify the stashed responses, append labels to the parquet, tear down.
+  1. **Subject phase** — load subject model on all 4 GPUs (TP=4, bf16), generate responses for every (prompt × condition) cell of the experiment, stash `(prompt_id, condition, response, activations)` rows to parquet, tear down the subject.
+  2. **Primary judge phase** — load Qwen 3.6-27B on all 4 GPUs (TP=4, bf16; or TP=2 × data_parallel=2 if throughput tuning prefers it), batch-classify the stashed responses, append labels to the parquet, tear down.
   3. **Cross-check phase** — load Gemma 4 31B-it on all 4 GPUs, classify the 200-sample subset, append `judge2_label` column, tear down. Skipped when Gemma 4 31B-it is the subject of the current experiment.
-- **Why phased:** Llama 3.3 70B and other large subjects want all 4 GPUs. Co-locating an always-on judge would force subjects to quantize harder or page to CPU. Phased = each model uses the full cluster at ~90%+ util and there is no cross-contention.
-- **Exception:** if a subject model is small enough to leave ≥2 GPUs free (e.g., Gemma 2 27B bf16 on 2 GPUs), the judge MAY be co-located for overlap — but only as an optimization, never the default.
+- **Why phased:** Each model uses the full 4-GPU cluster at ~90%+ util and there is no cross-contention. Co-locating an always-on judge would force the subject into smaller TP or CPU paging.
+- **Exception:** if a subject model is small enough to leave ≥2 GPUs free, the judge MAY be co-located for overlap — but only as an optimization, never the default.
 
 ### Tooling Versions & Env
 - **Package manager:** `uv` with `pyproject.toml` + lockfile committed.
@@ -87,7 +91,7 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 - **Seeds:** every experiment config has a `seed` field; set torch + numpy + python random + `PYTHONHASHSEED` + engine seed; logged in `manifest.json`.
 
 ### Data & Checkpointing
-- **Cached activations:** parquet in `data/cache/activations/`, one file per (model, dataset, layer).
+- **Cached activations:** **safetensors** in `data/cache/activations/`, one file per (model, dataset, layer) plus a sibling `.meta.json` with shape, dtype, token-aggregation rule, seed, git SHA. (Safetensors mmaps cleanly for tensors; parquet is reserved for tabular result tuples — see CONVENTIONS.)
 - **Results layout:** every `results/exp{N}_{name}/` contains `config.yaml`, `manifest.json` (schema + seed + git SHA + artifacts), `metrics.json`, `details.parquet`, `figures/`.
 - **Checkpointing principle:** any unit of work >15 min to redo gets a checkpoint; nothing smaller. Checkpoint after (model, layer) extraction cells, after each steering-strength × layer cell, after full 1,100-prompt judge passes. Do not dump per-prompt intermediates during a run.
 - **Resume:** experiment scripts check for existing `manifest.json` and resume from last checkpoint unless `--fresh` is passed.

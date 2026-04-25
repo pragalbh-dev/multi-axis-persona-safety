@@ -20,26 +20,26 @@
 
 ## Tasks
 
-- [ ] T1.1: Design codebase structure
+- [x] T1.1: Design codebase structure
   - Define module interfaces for: extraction, steering, evaluation, analysis, visualization
   - Create `src/` subdirectories with `__init__.py` and docstring stubs
   - Define shared data types (e.g., `ActivationCache`, `SteeringConfig`, `EvalResult`)
   - Write a `README.md` for `src/` explaining the module architecture
 
-- [ ] T1.2: Design activation extraction pipeline
+- [x] T1.2: Design activation extraction pipeline
   - Interface: `extract_activations(model, prompts, layers) → ActivationCache`
   - Support: single prompt, batch, specific layers or all layers
   - Output format: dict mapping `(prompt_id, layer) → tensor`
   - Save/load format: HDF5 or safetensors for large activation caches
   - Must work with both TransformerLens and nnsight backends
 
-- [ ] T1.3: Design steering mechanism
+- [x] T1.3: Design steering mechanism
   - Interface: `steer(model, direction_vector, strength, layers) → steered_model`
   - Support: single PC, multiple PCs, activation capping (min clamp), arbitrary direction
   - The capping formula: `h ← h - v * min(⟨h,v⟩ - τ, 0)` — must be a first-class operation
   - Must be composable: cap PC1 AND steer PC2 simultaneously
 
-- [ ] T1.4: Design evaluation harness
+- [x] T1.4: Design evaluation harness
   - **Safety eval interface:** `eval_safety(model, prompts, judge_config) → SafetyResults`
     - Calls judge API in batches, handles rate limiting, retries
     - Returns: per-prompt harm score, aggregate harm rate, bootstrap CI
@@ -51,24 +51,24 @@
   - Results format: JSON lines or parquet, one row per (prompt, condition)
   - Must save full outputs (input, response, PC projections, safety score) for Viz 6
 
-- [ ] T1.5: Design results logging and analysis framework
+- [x] T1.5: Design results logging and analysis framework
   - Each experiment writes to `results/exp{N}_{name}/`
   - Standard output files: `config.yaml` (what was run), `metrics.json` (aggregate), `details.parquet` (per-prompt)
   - Analysis module reads results and produces: bootstrap CIs, Cohen's d, correlations, LASSO fits
   - Plotting module produces: matplotlib static figures (for paper) + Plotly interactive (for dashboard)
 
-- [ ] T1.6: Wireframe the report structure
+- [x] T1.6: Wireframe the report structure
   - Create `report/paper.md` (or `.tex`) with section headings and placeholder text
   - Each section has a "data needed" comment showing which experiment fills it
   - Create `report/blog.md` with a simpler structure
   - Define figure numbering: Fig 1 = Persona Space 3D, Fig 2 = Safety Heatmap, etc.
 
-- [ ] T1.6.5: Lock the shared experiment config schema (promoted from Stage 2)
+- [x] T1.6.5: Lock the shared experiment config schema (promoted from Stage 2)
   - Create `configs/experiment_template.yaml` covering fields every experiment needs: `seed`, `model_id`, `extraction_layer` (null until Stage 3 T3.1 fills in per model), `hook_point`, `token_aggregation` (default: "mean_response_tokens"), `max_input_len`, `max_output_len`, `batch_size`, `tensor_parallel`, `data_parallel`, `judge_primary_id`, `judge_crosscheck_id`, `crosscheck_subset_size`, `judge_prompt_path` (default: `configs/judge_prompt.yaml`), `output_dir`, `resume_from_manifest`, `fresh`.
   - Add a pydantic / dataclass validator for this schema in `src/utils/config.py` so every experiment loads configs through one code path.
   - Document in `CONVENTIONS.md` "Config schema per experiment".
 
-- [ ] T1.7: Design the interactive demo data schema
+- [x] T1.7: Design the interactive demo data schema
   - Define the precomputed output tuple: `(model, steering_mode, strength, defense_config, prompt_id, response_text, pc_projections, safety_score, capability_score)`
   - Storage format: parquet file(s) in `dashboard/data/`
   - Estimate size: ~7,500 entries × ~2KB each ≈ 15MB — easily hostable

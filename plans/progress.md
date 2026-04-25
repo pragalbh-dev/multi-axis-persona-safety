@@ -198,3 +198,82 @@ Copy, fill, append at the **end** of this file when a stage completes. Do not ed
 - `Eval dataset IDs` — 4 datasets with revision SHAs; Shah deferred, DAN primary via subagent output.
 - `Max input/output lengths per task` — audit table summarized.
 - `Batch size & TP per model` — per-family load time / tokens/sec / VRAM / tuning flags.
+
+- [2026-04-25 07:47] Stage 1 / T1.8: revert fp8/2-GPU → bf16/4-GPU. Updated `CLAUDE.md` (Models / Hardware / Quantization → Precision policy / Inference & Serving / Data & Checkpointing), `plans/CONVENTIONS.md` (Quantization → Precision policy; Model IDs section refreshed to bf16 base IDs; Batch size & TP block kept old fp8/TP=2 numbers as historical reference). Logged decision to `plans/decisions.md` 2026-04-25 entry.
+- [2026-04-25 08:00] Stage 1 / T1.6.5: pinned `pydantic>=2,<3` in pyproject.toml. Wrote `configs/experiment_template.yaml` (4-GPU bf16 defaults). Built `src/utils/config.py::ExperimentConfig` with field validators (model_id ∈ subjects.yaml, layer-range bound, TP enum, paired eval_sizes, dataset/benchmark literals) and resolvers (`resolved_hook_point`, `resolved_eval_sizes`). Filled CONVENTIONS.md "Config schema per experiment".
+- [2026-04-25 08:15] Stage 1 / T1.1: added `types.py` per module + `src/utils/manifest.py` + `src/utils/results.py`. Wrote `src/README.md` with module map + import-direction rule + reuse mandate (external/assistant-axis primitives). Updated all `__init__.py` re-exports.
+- [2026-04-25 08:25] Stage 1 / T1.2: extraction-pipeline contracts. `src/extraction/extractor.py` (dispatcher), `backend_hf.py` (HF/TL stub wrapping external/assistant-axis ActivationExtractor), `backend_vllm.py` (Stage 3 T3.1 hand-off contract). Locked safetensors cache schema in CONVENTIONS.md "Activation cache safetensors schema".
+- [2026-04-25 08:35] Stage 1 / T1.3: steering wrapper. `src/steering/steerer.py` re-exports `external.assistant_axis.steering.ActivationSteering` and adds `from_config(SteeringConfig)`, `cap_and_steer(...)` context-manager composition, `multi_axis_cap(...)` Stage 6 entry, `verify_orthogonality(...)`. Capping range expansion verified against a synthetic nn.Module (4 hooks for layer range [2,5]).
+- [2026-04-25 08:45] Stage 1 / T1.4: eval harness contracts. `safety.py` (HARM_LABELS_9CAT + binarize_harm + dual-dataset driver stub), `capability.py` (per-bench dispatch stub keyed off configs/eval_sizes.yaml), `full.py` (phased driver: subject → primary judge → capability → cross-check, with self-preference skip). `evaluation/types.py` locks `PER_PROMPT_COLUMNS` (20 columns including aa_projection, pc_projections JSON, harm_binary).
+- [2026-04-25 08:55] Stage 1 / T1.5: analysis + visualization stubs. `analysis/{bootstrap,correlation,lasso,blind_spot}.py` with implemented helpers (`bca_ci`, `bca_ci_difference`, `point_biserial`, `pearson_with_ci`, `kendall_tau`, `bh_fdr`, `auc_with_ci`) and Stage 3 T3.8 stubs (`logistic_lasso_cv`, `ordinal_lasso_cv`, `blind_spot_lift`). `visualization/figures.py` with `FIGURE_REGISTRY` (Fig 1-6 → renderer map) + `figure_paths` helper.
+- [2026-04-25 09:05] Stage 1 / T1.6: report wireframes. `report/paper.md` (10 sections per plan.md, each with DATA NEEDED + FIGURES placeholders), `report/blog.md` (lighter mirror), `report/figures.md` (registry table mirroring src/visualization/figures.py).
+- [2026-04-25 09:15] Stage 1 / T1.7: dashboard schema + wireframe + skeleton app. `dashboard/data/schema.md` (per-row columns superset of PER_PROMPT_COLUMNS + 2 dashboard-only fields), `dashboard/wireframe.md` (ASCII layout: left selectors / center prompt-response / right PC mini-plot + AA bar), `dashboard/app.py` (layout-only Dash skeleton, no callbacks).
+- [2026-04-25 09:30] Stage 1 / T1.x: tests + gates. `tests/unit/{test_config,test_types,test_manifest,test_steerer_compose}.py` — 35 tests, all green. `ruff format` + `ruff check` clean (added `N803`, `N806` to ignore for scientific-Python naming convention). `mypy --strict src` green. Side-effect-free import probe: 2.0s for full module + dashboard layout.
+
+## Stage 1 → Stage 2 Handoff — 2026-04-25
+
+**Artifacts produced:**
+
+*Module layer (src/):*
+- `src/extraction/{__init__.py, types.py, extractor.py, backend_hf.py, backend_vllm.py}` — `ActivationCache` (safetensors+meta.json IO), `ExtractionConfig`, top-level `extract_activations(…)` dispatcher. Backends are Stage 1 stubs; Stage 2 T2.2 fills `backend_hf` (forward-hook over `external.assistant_axis.internals.activations.ActivationExtractor`); Stage 3 T3.1 fills `backend_vllm` (vLLM hidden-states or nnsight path).
+- `src/steering/{__init__.py, types.py, steerer.py}` — `SteeringConfig` + thin wrappers around `external.assistant_axis.steering.ActivationSteering`: `from_config`, `cap_and_steer` (context-manager composition), `multi_axis_cap` (with `verify_orthogonality`).
+- `src/evaluation/{__init__.py, types.py, safety.py, capability.py, full.py}` — `PER_PROMPT_COLUMNS` locked (20 cols), `SafetyResult`, `CapabilityResult`, `EvalResult`, `binarize_harm` + `HARM_LABELS_9CAT`. `eval_safety` / `eval_capability` / `eval_full` are Stage 2 T2.4-T2.6 stubs but signatures + contracts are pinned.
+- `src/analysis/{__init__.py, types.py, bootstrap.py, correlation.py, lasso.py, blind_spot.py}` — `bca_ci`, `bca_ci_difference`, `point_biserial`, `pearson_with_ci`, `kendall_tau`, `bh_fdr`, `auc_with_ci` implemented; `logistic_lasso_cv` / `ordinal_lasso_cv` / `blind_spot_lift` are Stage 3 T3.8 contract stubs.
+- `src/visualization/{__init__.py, types.py, figures.py}` — `FigureSpec`, `FigureKind` literal (6 figures), `FIGURE_REGISTRY` mapping each kind to `(fig_number, source_exp, viz_id, stage, renderer)`, `figure_paths(name, results_dir)` helper.
+- `src/utils/{__init__.py, config.py, manifest.py, results.py}` — `ExperimentConfig` (pydantic v2), `Manifest` (dataclass + JSON IO + git_sha), `init_results_dir` enforcing the per-experiment output contract.
+- `src/README.md` — one-page module map, import-direction rule, reuse mandate cribbing from external/assistant-axis.
+
+*Configs:*
+- `configs/experiment_template.yaml` — Stage 1 T1.6.5 schema, all fields documented. Defaults: dtype=bf16, tensor_parallel=4, datasets=[dan, shah_reconstructed], capability_benchmarks=[ifeval, mmlu_pro, gsm8k, eq_bench]. Loadable by `load_experiment_config('configs/experiment_template.yaml')`.
+
+*Report wireframes:*
+- `report/paper.md` — 10 sections (Introduction → Conclusion + Appendices A-D), each with `<!-- DATA NEEDED -->` + `<!-- FIGURES -->` placeholders pointing at `results/expN_*` dirs.
+- `report/blog.md` — lighter LessWrong/Twitter-style mirror.
+- `report/figures.md` — Fig 1..6 ↔ Viz 1..5 ↔ Stage/Exp registry table; mirrors `src/visualization/figures.py::FIGURE_REGISTRY`.
+
+*Dashboard wireframe (Stage 8 will plug in callbacks):*
+- `dashboard/wireframe.md` — ASCII layout + interaction rules.
+- `dashboard/data/schema.md` — locked precomputed-tuple parquet schema (one shard per subject, two `★`-marked dashboard-only fields beyond `PER_PROMPT_COLUMNS`).
+- `dashboard/app.py` — layout-only Dash skeleton; `app.layout` is a static `html.Div` with all selector / output / geometry components + `id`s ready for Stage 8 callbacks. Importing the module does not touch GPUs or load parquets.
+
+*Tests + gates:*
+- `tests/unit/test_config.py` — ExperimentConfig validator (template loads, unknown model_id, TP enum, layer range, partial eval-size pair, dataset enum, hook-point + eval-sizes resolvers).
+- `tests/unit/test_types.py` — happy-path instantiation of every Stage 1 dataclass + ActivationCache safetensors round-trip + SteeringConfig negative paths.
+- `tests/unit/test_manifest.py` — Manifest IO + `init_results_dir` fresh + resume.
+- `tests/unit/test_steerer_compose.py` — capping-range expansion (4 hooks for layers [2,5]), `cap_and_steer` composition, `multi_axis_cap` orthogonality warning.
+- 35/35 tests pass; `ruff format` + `ruff check` clean; `mypy --strict src` clean (33 source files).
+
+**Decisions locked this stage (mirrored to CONVENTIONS.md / decisions.md as relevant):**
+- Reverted core stages from fp8/2-GPU (TP=2) to bf16/4-GPU (TP=4). Llama 3.3 70B stays at Ext 9 (140 GB at bf16 doesn't fit). Quant-validity gate moved from Stage 3 prelude to Ext 9 prerequisites only. See `plans/decisions.md` 2026-04-25 entry.
+- Pydantic v2 for config validation; pyproject.toml gains `pydantic>=2,<3`. Ruff lint adds N803 + N806 to ignore (scientific-Python convention).
+- Activation cache layout = safetensors + sibling .meta.json, one file pair per (model, dataset, layer); aggregation applied at extract time so caches are `(n_prompts, d_model)`.
+- Per-prompt result row (`PER_PROMPT_COLUMNS`) — 20 columns; superset is the dashboard-shard schema. Both Stage 4-6 details.parquet writers and Stage 8 dashboard build pipeline target this contract.
+- Result-dir contract: `results/expN_*/{config.yaml, manifest.json, metrics.json, details.parquet, figures/}`. Enforced by `init_results_dir(cfg)`.
+- Figure numbering 1..6 ↔ Viz 1..5 ↔ Stage/Exp matrix in `src/visualization/figures.py::FIGURE_REGISTRY` + `report/figures.md`.
+- Markdown-only report scaffold (per user); LaTeX deferred to Stage 8 if needed.
+
+**Gotchas / surprises:**
+- The vendored `external/assistant-axis/assistant_axis/steering.py::ActivationSteering` is one-`intervention_type`-per-instance. Composing capping + steering requires nesting two context managers (`cap_and_steer` does this with `ExitStack`), not merging into one steerer. PyTorch fires hooks in registration order, so cap fires before steer at every layer where both apply — that ordering matches the paper's §5 forward pass.
+- `external/assistant-axis` is added to `sys.path` at import time by `src/steering/steerer.py` (it isn't installed as a package). This works for our usage but a future agent who installs the upstream as a real package will need to drop the sys.path hack.
+- `eval_sizes.yaml` keys are full subject IDs (`ifeval::gemma_2_27b`), NOT family keys — `model_hooks.yaml` uses family keys (`gemma_2`). `cfg.resolved_eval_sizes(dataset)` uses model_id; `cfg.resolved_hook_point(layer)` uses family. Easy to confuse.
+- Pydantic v2 + Literal-typed list defaults need explicit `lambda: list[Literal...](...)` casts in `default_factory` to satisfy mypy strict — see `ExperimentConfig.datasets` / `capability_benchmarks`.
+- The `_template_` sentinel in `configs/experiment_template.yaml` for `experiment_id` and `output_dir` is just a placeholder so `load_experiment_config` works on the template. Real experiments override.
+- `src/evaluation/judge_batch.py` (Stage 0 deliverable) had two pre-existing mypy errors — one fixed by typing `chat_template_kwargs: dict[str, Any] | None`, the other by asserting `tokenize=False` returns `str`. No behavior change.
+- Pre-existing `src/data/build_dan_jailbreak.py` had one untyped `dict` annotation; fixed to `dict[str, Any]` so mypy stays clean.
+
+**Open items for Stage 2 (the implementation stage):**
+- T2.0 — transcribe paper Appendix D.2.2 9-category harm prompt to `configs/judge_prompt.yaml`. Stage 1 evaluation/safety.py contract is ready to consume it via `judge_prompt_path`.
+- T2.1 — wrap subject-load patterns from `scripts/smoke_load.py` + `judge_batch.py` into a reusable service harness that spawns subprocesses per model (avoids the resource-tracker leak documented in CONVENTIONS "Batch size & TP" note).
+- T2.2 — fill `src/extraction/backend_hf.py::extract_via_hf` against `external/assistant-axis::ActivationExtractor` for the bf16 PCA-fitting path.
+- T2.4 — fill `src/evaluation/safety.py::eval_safety` (compose `run_judge_batch` + `binarize_harm` + `bca_ci`).
+- T2.4.5 — produce the 200-sample GPT-5.5 pseudo-ground-truth judge-validation set (the only external API spend budgeted).
+- T2.5 — fill `src/evaluation/capability.py` adapters per benchmark.
+- T2.6 — fill `src/evaluation/full.py::eval_full` phased driver.
+- T2.x — Stage 2 should NOT modify the `PER_PROMPT_COLUMNS` schema, the result-dir contract, the `ExperimentConfig` shape, or the figure registry without explicit handoff back to Stage 1 design. Schema migrations require a `decisions.md` entry.
+
+**Pointers into CONVENTIONS.md updated:**
+- "Quantization policy" → renamed "Precision policy"; bf16 default for core stages; fp8 reserved for Ext 9. Quant-validity check moved to Ext 9 prerequisites.
+- "Model IDs" — refreshed to bf16 base IDs (`google/gemma-2-27b-it`, `Qwen/Qwen3-32B`, `google/gemma-4-31B-it`, `Qwen/Qwen3.6-27B`) with TP=4. Historical fp8 IDs kept as Ext 9 reference.
+- "Batch size & TP per model" — flagged Stage 0 fp8/TP=2 numbers as historical; live values live in `configs/subjects.yaml` per the Stage 1 prep grid-search commits.
+- "Activation cache safetensors schema" — filled.
+- "Config schema per experiment" — filled.

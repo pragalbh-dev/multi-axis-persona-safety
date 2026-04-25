@@ -154,7 +154,7 @@ def sample_workload(profile: str, n: int = 30, seed: int = 42) -> list[str]:
 
 # ----------------- single-cell run (called as subprocess) -----------------
 
-def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: bool) -> None:
+def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: bool, workload_n: int = 30) -> None:
     """Execute one grid cell in this process. Writes a single JSON to RESULTS_DIR."""
     import torch
     import yaml
@@ -179,7 +179,8 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
         return [pynvml.nvmlDeviceGetMemoryInfo(h).used / 1e9 for h in nvml_handles]
 
     baseline_vram = vram_used_gb()
-    cell_label = f"{family}__{profile}__gmu{int(gmu*100)}_seq{max_seqs}_eager{int(enforce_eager)}"
+    suffix = f"_n{workload_n}" if workload_n != 30 else ""
+    cell_label = f"{family}__{profile}__gmu{int(gmu*100)}_seq{max_seqs}_eager{int(enforce_eager)}{suffix}"
     print(f"[{cell_label}] starting", flush=True)
 
     t_load_0 = time.time()
@@ -199,7 +200,7 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
 
     tokenizer = llm.get_tokenizer()
     ctk = cfg.get("chat_template_kwargs") or {}
-    raw = sample_workload(profile, n=30, seed=42)
+    raw = sample_workload(profile, n=workload_n, seed=42)
     convs = [[{"role": "user", "content": p_text}] for p_text in raw]
     prompts = [tokenizer.apply_chat_template(c, tokenize=False, add_generation_prompt=True, **ctk) for c in convs]
 
@@ -377,6 +378,7 @@ def main() -> None:
     ap.add_argument("--gmu", type=float)
     ap.add_argument("--max-seqs", type=int)
     ap.add_argument("--enforce-eager", action="store_true")
+    ap.add_argument("--workload-n", type=int, default=30, help="number of prompts in the benchmark workload")
     ap.add_argument("--grid", nargs=2, metavar=("FAMILY", "PROFILE"))
     ap.add_argument("--all", action="store_true")
     args = ap.parse_args()
@@ -385,7 +387,7 @@ def main() -> None:
         family, profile = args.single
         if args.gmu is None or args.max_seqs is None:
             ap.error("--single requires --gmu and --max-seqs")
-        _run_single(family, profile, args.gmu, args.max_seqs, args.enforce_eager)
+        _run_single(family, profile, args.gmu, args.max_seqs, args.enforce_eager, workload_n=args.workload_n)
         return
 
     if args.grid:

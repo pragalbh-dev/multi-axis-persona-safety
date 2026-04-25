@@ -112,18 +112,16 @@ These are derived directly from Lu et al. 2601.10387 via line-by-line check of t
   - **LASSO features (Stage 3 T3.8):** projections onto `{AA, PC2, PC3, ..., PCk}`. Drop PC1 as redundant with AA. "Safety-relevant PC" = LASSO-nonzero among PCs 2..k only (AA is the always-on baseline). Blind spot lift = `AUC(AA + LASSO-selected PCs 2..k) − AUC(AA only)` with bootstrap BCa CI.
   - **Adversarial direction (Stage 4 T4.6):** `u_adv = Σ_{i≥2} c_i · PC_i` (from the LASSO fit above), then **explicitly project AA out**: `u_adv ← u_adv − (⟨u_adv, AA⟩ / ||AA||²) · AA`. Needed because PCs 2..k are orthogonal to PC1 but not strictly to AA. L2-normalize, scale to lmsys-chat-1m norm.
   - **Stage 5 composition is unaffected** — composition is about role-vector arithmetic in the d_model activation space, independent of the AA vs PC1 choice.
-- **Quantization policy (2-GPU hardware constraint — 2× RTX 5090 = 64 GB):** all subjects and judges run quantized. Preference order per model (decided Stage 0 T0.4 / T0.5):
-  1. Official-provider **fp8** checkpoint on HF (e.g., `Qwen/...-FP8`, `neuralmagic/...-FP8`) — vLLM/SGLang native, hardware-accelerated on 5090 **Blackwell** (GB202) fp8 tensor cores (E4M3/E5M2). Best quality × throughput.
-  2. Official-provider or community **AWQ 4-bit** — vLLM native, good quality and speed.
-  3. **Unsloth fp8 or AWQ uploads** (NOT their GGUF line).
-  4. **Self-calibrated AWQ** via `autoawq` + 256 calibration samples from lmsys-chat-1m. ~1 hr per model.
-  - **Avoid:** GGUF (llama.cpp format; vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (unverified at extraction fidelity).
-  - **fp8 ≠ GGUF Q8_0.** fp8 is an 8-bit floating-point format with hardware tensor-core support in vLLM. GGUF Q8_0 is an 8-bit integer format native to llama.cpp — incompatible with our vLLM throughput target. Do NOT conflate; future agents, read this carefully.
-  - **fp4 (NVFP4) note:** Blackwell also has native fp4 tensor cores. vLLM fp4 support is bleeding-edge as of 2026-04; not the default path. Reserved as a possible fallback for Stage 7 Ext 9 Llama 3.3 70B on 2× 5090 (70B × fp4 ≈ 35 GB weights; might fit with tight KV). Do not use in core stages without user sign-off.
-- **Quantization validity check (required before Stage 3 T3.1 extraction per subject):**
-  - **Tier 1 subjects (paper released PC1 direction on HF):** project test activations onto paper's bf16 PC1 direction. Run 25 Assistant-like roles (researcher, debugger, consultant, analyst, writer, …) + 25 fantastical roles (bard, ghost, leviathan, eldritch, …) + default Assistant (no system prompt), ~2 rollouts each using paper's extraction questions. Extract mean-response-token activations at presumed middle layer. Pass if `(μ_assistant_projection − μ_fantastical_projection) / pooled_std > 1.5` AND default Assistant sits near the Assistant-like extreme.
-  - **Tier 2 subjects (no paper reference):** (a) perplexity on 500 wikitext-v2 tokens within 5% of the model-card published bf16 perplexity; (b) qualitative role-response check on 5 test roles (diplomat, poet, hacker, therapist, skeptic) with manual read-through for semantic appropriateness.
-  - Per-subject quant choice + validity numbers logged to `plans/decisions.md`. Gates Stage 3 T3.1 extraction; do not proceed on any subject that fails.
+- **Precision policy (4× RTX 5090 = 128 GB total VRAM, all 4 GPUs available):** core stages run **bf16 at TP=4**. Bf16 is the paper's reference precision; running it removes the extraction-fidelity argument and the per-subject quant-validity gate that the prior fp8 plan required. See `plans/decisions.md` 2026-04-25 entry for the revert from 2-GPU/fp8.
+  - **Default for every core subject + primary judge:** bf16 base HF checkpoints, `tensor_parallel_size: 4`, `gpu_memory_utilization: 0.85`. Per-subject tuning lives in `configs/subjects.yaml`.
+  - **fp8 reserved for Stage 7 Ext 9 only** (Llama 3.3 70B). 70B × bf16 ≈ 140 GB exceeds the 128 GB budget; fp8 (or NVFP4 fallback) is the only path. Ext 9's prerequisites include the Tier 1 quant-validity check defined below.
+  - **Avoid in all stages:** GGUF (llama.cpp format; vLLM support experimental/slow), bnb-nf4 (vLLM slow), Dynamic Quants 2.0 (unverified at extraction fidelity).
+  - **fp8 ≠ GGUF Q8_0.** fp8 = 8-bit floating-point format with hardware tensor-core support in vLLM (Blackwell GB202 sm_120). GGUF Q8_0 = 8-bit integer format native to llama.cpp; incompatible with our vLLM throughput target. Do NOT conflate.
+  - **fp4 (NVFP4) note:** Blackwell has native fp4 tensor cores; vLLM fp4 support is bleeding-edge as of 2026-04. Reserved as a fallback path for Ext 9 if fp8 also OOMs. Do not use in core stages without user sign-off.
+- **Quantization validity check (Ext 9 prerequisite only — no longer in core stages):**
+  - **Tier 1 subjects with a quantized checkpoint (Llama 3.3 70B at fp8 in Ext 9):** project test activations onto paper's bf16 reference direction. Run 25 Assistant-like roles (researcher, debugger, consultant, analyst, writer, …) + 25 fantastical roles (bard, ghost, leviathan, eldritch, …) + default Assistant (no system prompt), ~2 rollouts each using paper's extraction questions. Extract mean-response-token activations at presumed middle layer. Pass if `(μ_assistant_projection − μ_fantastical_projection) / pooled_std > 1.5` AND default Assistant sits near the Assistant-like extreme.
+  - **Tier 2 subjects without a paper reference (any future quantized subject):** (a) perplexity on 500 wikitext-v2 tokens within 5% of the model-card published bf16 perplexity; (b) qualitative role-response check on 5 test roles (diplomat, poet, hacker, therapist, skeptic) with manual read-through for semantic appropriateness.
+  - Per-subject quant choice + validity numbers logged to `plans/decisions.md`. Gates Ext 9 extraction; do not proceed on any subject that fails.
   - ~10 min per subject wall-clock.
 
 ---
@@ -139,14 +137,15 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > **Decided Stage 0 / T0.1 (2026-04-24):** vLLM **0.19.1** (stable on PyPI 2026-04-18). Torch resolves to **2.10.0+cu128**. Reason: Qwen3_5 + Gemma4 arch classes present in 0.19.1 registry; Blackwell sm_120 CUTLASS fp8 GEMM landed in 0.19.0 (#37970); transformers v5.5.3 pin via 0.19.1 patches. SGLang was viable but less verified for Qwen 3.6 and Qwen 3 thinking-mode toggles. v0.20.0 is GitHub prerelease only — not pinning prereleases. See `plans/decisions.md` entry 2026-04-24 17:30.
 
 ### Model IDs (exact HuggingFace paths)
-> **Decided Stage 0 / T0.4+T0.5 (verification 2026-04-24; loads pending).** All FP8 checkpoints verified to exist + config inspected. Quant-validity (Stage 3 T3.1.0) still gates extraction.
-> - Subject Gemma 2 27B IT: `Infermatic/gemma-2-27b-it-FP8-Dynamic` (community fp8 — no official Google fp8 exists; `nm-testing/...` and `neuralmagic/...` are nonexistent per HF API). Base tokenizer/config from `google/gemma-2-27b-it` (gated=manual, license already accepted on account `ub0001`).
-> - Subject Qwen 3 32B (thinking OFF): `Qwen/Qwen3-32B-FP8` (official). Arch `Qwen3ForCausalLM`. Toggle via `chat_template_kwargs={"enable_thinking": False}`.
-> - Subject Gemma 4 31B IT (thinking ON+OFF): `RedHatAI/gemma-4-31B-it-FP8-block` (community fp8; compressed-tensors format). Arch `Gemma4ForConditionalGeneration` (multimodal; text-only use). `trust_remote_code=True` required. **Use TRITON_ATTN attention backend** (vLLM #40677 — FLASHINFER breaks Gemma 4 on Blackwell).
-> - Judge primary Qwen 3.6-27B: `Qwen/Qwen3.6-27B-FP8` (official, last modified 2026-04-24). Arch `Qwen3_5ForConditionalGeneration` (multimodal; text-only use). Non-thinking family by design.
-> - Judge cross-check Gemma 4 31B IT: same checkpoint as subject; separate load. Self-preference rule enforced in driver (skip when Gemma 4 is the subject).
-> - **Deferred to Stage 7 Ext 9** — Llama 3.3 70B IT. Out of 64 GB budget even fp8.
+> **Decided Stage 0 / T0.4+T0.5 (initial verification 2026-04-24); reverted to bf16 base IDs Stage 1 / T1.8 (2026-04-25)** — 4 GPUs now available. See `plans/decisions.md` 2026-04-25 fp8→bf16 entry. Source-of-truth lives in `configs/subjects.yaml`.
+> - Subject Gemma 2 27B IT: `google/gemma-2-27b-it` bf16 (gated=manual, license accepted on account `ub0001`). Arch `Gemma2ForCausalLM`. TP=4.
+> - Subject Qwen 3 32B (thinking OFF): `Qwen/Qwen3-32B` bf16 (official). Arch `Qwen3ForCausalLM`. Toggle via `chat_template_kwargs={"enable_thinking": False}`. TP=4.
+> - Subject Gemma 4 31B IT (thinking ON+OFF): `google/gemma-4-31B-it` bf16 (official). Arch `Gemma4ForConditionalGeneration` (multimodal; text-only use). `trust_remote_code=True` required. Bf16 path uses default attention backend; the FLASHINFER issue (vLLM #40677) is fp8-codepath specific. TP=4.
+> - Judge primary Qwen 3.6-27B: `Qwen/Qwen3.6-27B` bf16 (official). Arch `Qwen3_5ForConditionalGeneration` (multimodal; text-only use). `enable_thinking=False` required for judge use (defaults to thinking ON despite earlier "non-thinking family" classification). TP=4, `max_model_len: 2048`.
+> - Judge cross-check Gemma 4 31B IT: same `google/gemma-4-31B-it` bf16 checkpoint as subject; separate load. Self-preference rule enforced in driver (skip when Gemma 4 is the subject).
+> - **Deferred to Stage 7 Ext 9** — Llama 3.3 70B IT at fp8 (or NVFP4 fallback). 70B × bf16 ≈ 140 GB exceeds 128 GB total budget; bf16 path infeasible.
 > - **Deferred to Stage 7 Ext 1** — Qwen 3.6-35B-A3B MoE.
+> - **Historical fp8 IDs (no longer used in core stages, kept for Stage 7 Ext 9 reference):** `Infermatic/gemma-2-27b-it-FP8-Dynamic`, `Qwen/Qwen3-32B-FP8`, `RedHatAI/gemma-4-31B-it-FP8-block`, `Qwen/Qwen3.6-27B-FP8`. These were verified to exist on HF on 2026-04-24 (see decisions.md 2026-04-24 17:40 entry).
 
 ### Eval dataset IDs
 > **Decided Stage 0 / T0.10 (2026-04-24).** Snapshot revisions pinned in `data/eval/<name>/meta.json`. All downloads stored as `prompts.jsonl` + `meta.json`.
@@ -160,7 +159,11 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > _Decided Stage 2 when safety eval harness implemented. Record: exact prompt, parsing rules, label set (e.g., harmful/refusal/ambiguous), and agreement rule (when to use cross-check judge)._
 
 ### Activation cache safetensors schema
-> _Decided Stage 2 when extraction harness implemented. Record: tensor dtype (bf16 / fp16 / fp32 tradeoff), shape convention (n_prompts × n_layers × d_model OR one file per layer), metadata fields in sibling `.meta.json`._
+> **Decided Stage 1 / T1.2 (2026-04-25).** Source-of-truth: `src/extraction/types.py::ActivationCache`.
+> - **Path layout:** one file pair per `(model_id, dataset, layer)` triple at `data/cache/activations/{model_id}/{dataset}/L{layer}.safetensors` + sibling `.meta.json`. Per-layer sharding (not a single bundled tensor) so partial extraction can resume cleanly and unused layers don't bloat memory.
+> - **Tensor:** key = `"activations"`, shape `(n_prompts, d_model)` after token aggregation. Aggregation is applied at extract time, NOT load time. Default aggregation = mean over response tokens (paper line 96); other choices (`last`, `all`) are explicit overrides. Dtype = bf16 (matches paper reference precision); fp16 / fp32 are valid but log to `decisions.md` if used.
+> - **Sidecar `.meta.json`:** `{model_id, dataset, layer, shape, dtype, token_aggregation, prompt_ids, seed, git_sha, ...}`. `prompt_ids` is the parallel ordering for the rows of the tensor — required so downstream code can join activations to the prompt parquet without trusting row order.
+> - **IO:** `ActivationCache.save(path)` and `ActivationCache.load(path)` accept a stem path (no extension); the helpers add `.safetensors` and `.meta.json`. `ActivationCache.cache_path(model_id, dataset, layer, root)` returns the canonical stem.
 
 ### Max input/output lengths per task
 > **Decided Stage 0 / T0.2 (2026-04-24).** Full audit in `configs/eval_sizes.yaml`; produced from seeded 200-sample subsets per eval dataset × 4 tokenizers (gemma_2_27b, qwen_3_32b, gemma_4_31b, qwen_3_6_27b). Tokenizer-level distributions are near-identical across the 4 families (within ~5%), so the numbers below are maxed across families.
@@ -174,15 +177,23 @@ These aren't locked — the agent running the relevant stage decides. But once d
 > - Judge call (3-label role-expression): `max_out=8` (single digit); `max_in` tracks the role-specific template + response.
 
 ### Batch size & TP per model
-> **Partial — Stage 0 T0.4/T0.5 smoke-load numbers recorded 2026-04-24.** All 4 subjects + judge load at TP=2 and generate coherent text on 5-prompt smoke tests. Full batch-size tuning happens in Stage 2 T2.2 (extraction harness) + T2.4 (judge batch driver). Results JSON per family at `results/stage_0_smoke/`.
-> - **gemma_2_27b** (Infermatic FP8-Dynamic): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 36s (cached) / 153s (cold). Gen 258 tok/s on 5 prompts × 128 max_tokens. VRAM ~62 GB total.
-> - **qwen_3_32b** (Qwen FP8, thinking OFF): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 48s / 101s. Gen 166 tok/s. VRAM ~50 GB estimated.
-> - **gemma_4_31b** (RedHatAI FP8-block, TRITON_ATTN, trust_remote_code=True): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 74-80s / 152s. Gen 138 tok/s (thinking OFF) to 258 tok/s (thinking ON, longer outputs). VRAM ~50 GB.
-> - **qwen_3_6_27b** (Qwen FP8, judge role): TP=2, gpu_mem_util=**0.70**, enforce_eager=**true**, max_model_len=**1024**. 0.85 and 0.75 both OOM at startup because this is a multimodal arch (`Qwen3_5ForConditionalGeneration` with vision_config). Load 100s. Gen 8.6 tok/s — slow due to enforce_eager + default-on thinking output; Stage 2 T2.0 must set `enable_thinking=False` in judge chat-template kwargs and re-tune. VRAM 50.1 GB (symmetric 25 GB/GPU).
-> - **Across-run VRAM-delta instrumentation caveat:** smoke_load's baseline-subtract per-run is polluted when a previous run's vLLM process didn't fully release state (resource-tracker leaks 6 semaphores per tear-down, per the script output). First-in-batch or solo-process readings are accurate; subsequent runs in the same Python process under-report delta VRAM. For Stage 2 batch-size tuning, spawn each model in a fresh subprocess.
+> **Stage 0 fp8/TP=2 numbers (2026-04-24) superseded by Stage 1 prep grid-search at bf16/TP=4 (2026-04-25).** Working tree: `configs/subjects.yaml` carries the current per-subject bf16/TP=4 tuning (every subject + judge at `tensor_parallel_size: 4`, `gpu_memory_utilization: 0.85`). The Stage 0 fp8 numbers below are kept for Stage 7 Ext 9 reference (Llama 70B fp8 path); they are NOT the values Stage 2+ should use. Full batch-size tuning continues in Stage 2 T2.2 / T2.4.
+> - **Live (bf16/TP=4):** see `configs/subjects.yaml` per-subject blocks; Stage 1 prep commits `5e7901d..f094689` ("[Stage 1 / prep] grid search …") wired up the inference grid search for cold-start, max_num_seqs descent, prefix caching, expandable_segments, and OOM headroom under bf16/TP=4.
+> - **Historical fp8/TP=2 numbers (Stage 0 smoke; only relevant if reverting):**
+>   - **gemma_2_27b** (Infermatic FP8-Dynamic): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 36s (cached) / 153s (cold). Gen 258 tok/s on 5 prompts × 128 max_tokens. VRAM ~62 GB total.
+>   - **qwen_3_32b** (Qwen FP8, thinking OFF): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 48s / 101s. Gen 166 tok/s. VRAM ~50 GB estimated.
+>   - **gemma_4_31b** (RedHatAI FP8-block, TRITON_ATTN, trust_remote_code=True): TP=2, gpu_mem_util=0.85, max_model_len=2048. Load 74-80s / 152s. Gen 138 tok/s (thinking OFF) to 258 tok/s (thinking ON, longer outputs). VRAM ~50 GB.
+>   - **qwen_3_6_27b** (Qwen FP8, judge role): TP=2, gpu_mem_util=**0.70**, enforce_eager=**true**, max_model_len=**1024**. 0.85 and 0.75 both OOM at startup. Load 100s. Gen 8.6 tok/s — slow due to enforce_eager + default-on thinking output. VRAM 50.1 GB (symmetric 25 GB/GPU).
+> - **Across-run VRAM-delta instrumentation caveat (still applies):** smoke_load's baseline-subtract per-run is polluted when a previous run's vLLM process didn't fully release state (resource-tracker leaks 6 semaphores per tear-down). First-in-batch or solo-process readings are accurate; subsequent runs in the same Python process under-report delta VRAM. For Stage 2 batch-size tuning, spawn each model in a fresh subprocess.
 
 ### Config schema per experiment
-> _Decided Stage 2 when `configs/experiment_template.yaml` is finalized. Record minimal required fields + optional fields._
+> **Decided Stage 1 / T1.6.5 (2026-04-25).** Source-of-truth: `configs/experiment_template.yaml` (the YAML schema with comments) + `src/utils/config.py::ExperimentConfig` (pydantic v2 validator). Defaults reflect the bf16/TP=4 working tree (per `plans/decisions.md` 2026-04-25 fp8→bf16 entry).
+> - **Required fields:** `experiment_id`, `model_id` (must be a key in `subjects.yaml`), `output_dir`. The validator rejects unknown `model_id`, `tensor_parallel ∉ {1,2,4}`, `extraction_layer` outside `[0, n_layers)` for the resolved family, half-set `(max_input_len, max_output_len)`, and unknown `datasets` / `capability_benchmarks` enum values.
+> - **Inheritance:** `null` for `extraction_layer`, `hook_point`, `max_input_len`, `max_output_len`, `batch_size`, `trust_remote_code`, `attention_backend`, `chat_template_kwargs` means "resolve at runtime from the locked configs". Resolvers: `cfg.resolved_hook_point(layer)` reads `configs/model_hooks.yaml` (TL or nnsight backend per family); `cfg.resolved_eval_sizes(dataset)` reads `configs/eval_sizes.yaml` keyed `f"{dataset}::{model_id}"`.
+> - **Steering sub-config:** `steering.mode ∈ {none, addition, ablation, capping, mean_ablation}`. When `mode != none`, `len(vectors) == len(coefficients)` and (for capping) `len(cap_thresholds) == len(vectors)` and `layers` are `[start, end]` ranges. For non-capping modes, `layers` are ints.
+> - **Datasets:** safety eval defaults to `[dan, shah_reconstructed]` per CONVENTIONS "Jailbreak datasets"; capability benchmarks default to all four (IFEval / MMLU Pro / GSM8k / EQ-Bench).
+> - **Self-preference:** when `model_id == judge_crosscheck_id`, the cross-check phase is skipped by the driver (Stage 1 T1.4 contract); the validator does not error, so call sites must guard with `if cfg.model_id != cfg.judge_crosscheck_id`.
+> - **Loaders:** `from src.utils.config import load_experiment_config, dump_experiment_config`. `load_experiment_config(path)` is the single code-path every experiment script uses.
 
 ---
 

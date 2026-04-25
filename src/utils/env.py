@@ -1,13 +1,14 @@
 """Project-wide environment setup.
 
 Import this module at the top of every script or notebook to:
-  1. Pin CUDA_VISIBLE_DEVICES=2,3 before torch / vLLM touches CUDA.
+  1. Pin CUDA_VISIBLE_DEVICES=0,1,2,3 before torch / vLLM touches CUDA.
   2. Load .env (HF_TOKEN etc.) via python-dotenv.
   3. Expose a seed-everything helper.
 
-GPUs 0 and 1 on the box are running an unrelated LoRA-tuning vLLM workload.
-This project is scoped to GPUs 2,3. See plans/decisions.md and Stage 0 plan.
+All 4 GPUs on the box are available to this project (revert from Stage 0's
+2-GPU constraint; see plans/decisions.md 2026-04-25 fp8->bf16 entry).
 """
+
 from __future__ import annotations
 
 import os
@@ -15,17 +16,17 @@ import random
 from pathlib import Path
 
 # Pin GPUs BEFORE importing torch anywhere in the process.
-# Respect an existing override only if it is a strict subset of {2,3}.
-_ALLOWED = {"2", "3"}
+# Respect an existing narrower override (e.g. CUDA_VISIBLE_DEVICES=0,1 for a
+# specific test) but reject anything that mentions a non-existent GPU index.
+_ALLOWED = {"0", "1", "2", "3"}
 _existing = os.environ.get("CUDA_VISIBLE_DEVICES")
 if _existing is None:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 else:
     requested = {x.strip() for x in _existing.split(",") if x.strip()}
     if not requested.issubset(_ALLOWED):
         raise RuntimeError(
-            f"CUDA_VISIBLE_DEVICES={_existing!r} requests GPUs outside the allowed set {_ALLOWED}. "
-            "GPUs 0,1 are reserved for another workload; do not touch them."
+            f"CUDA_VISIBLE_DEVICES={_existing!r} requests GPUs outside the allowed set {_ALLOWED}."
         )
 
 # Load .env (if present) before anything reads HF_TOKEN.

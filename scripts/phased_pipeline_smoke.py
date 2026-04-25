@@ -136,7 +136,7 @@ def phase2_judge(cfg, responses_path: Path) -> Path:
     llm = LLM(
         model=judge["hf_id"],
         tensor_parallel_size=judge["tensor_parallel_size"],
-        gpu_memory_utilization=judge.get("gpu_memory_utilization", 0.70),
+        gpu_memory_utilization=judge.get("gpu_memory_utilization", 0.85),
         trust_remote_code=judge.get("trust_remote_code", False),
         max_model_len=judge.get("max_model_len", 1024),
         enforce_eager=judge.get("enforce_eager", False),

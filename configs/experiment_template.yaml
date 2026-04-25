@@ -1,0 +1,82 @@
+# Shared experiment config template (Stage 1 T1.6.5).
+#
+# Every experiment script (src/experiments/exp{N}_{name}.py) loads its config
+# through `src.utils.config.load_experiment_config(path) -> ExperimentConfig`,
+# which validates this schema with pydantic v2. Defaults assume the 4-GPU /
+# bf16 / TP=4 working tree (see plans/decisions.md 2026-04-25).
+#
+# Experiments override fields they care about; any field left null is either:
+#   - resolved at runtime from a locked config (e.g. configs/subjects.yaml,
+#     configs/eval_sizes.yaml, configs/model_hooks.yaml), or
+#   - filled by an upstream stage (e.g. extraction_layer is filled by Stage 3
+#     T3.1 once the per-subject argmax cos_sim sweep lands).
+#
+# Source-of-truth for shared values:
+#   - Subjects + judges:    configs/subjects.yaml
+#   - Hook paths per family: configs/model_hooks.yaml
+#   - Per-(dataset, family) max_in / max_out: configs/eval_sizes.yaml
+#   - Capping ranges (paper-verbatim): configs/paper_capping_ranges.yaml
+#   - Judge prompts: configs/judge_prompt.yaml (Stage 2 T2.0),
+#                    configs/role_expression_prompt.yaml
+
+# ── Identity ────────────────────────────────────────────────────────────────
+experiment_id: _template_      # override per experiment (e.g. "exp1_pca_decomposition")
+seed: 42
+
+# ── Subject model ──────────────────────────────────────────────────────────
+model_id: gemma_2_27b          # MUST be a key in configs/subjects.yaml
+                               # (gemma_2_27b | qwen_3_32b | gemma_4_31b | qwen_3_6_27b)
+dtype: bf16                    # bf16 | fp16 | fp8 (fp8 reserved for Stage 7 Ext 9)
+tensor_parallel: 4             # 1 | 2 | 4
+data_parallel: 1
+trust_remote_code: null        # null = inherit from subjects.yaml; bool to override
+attention_backend: null        # null = inherit; "TRITON_ATTN" | "FLASHINFER" to override
+chat_template_kwargs: null     # null = inherit; dict (e.g. {enable_thinking: false}) to override
+
+# ── Extraction (Stage 3 T3.1 fills these per subject) ──────────────────────
+extraction_layer: null         # int once Stage 3 picks argmax cos_sim(PC1, AA)
+hook_point: ""                 # filled at runtime from configs/model_hooks.yaml
+token_aggregation: mean_response   # mean_response | last | all (paper line 96)
+
+# ── Capability + safety eval sizing ────────────────────────────────────────
+# If both null, runtime looks up (dataset, model_family) in eval_sizes.yaml.
+# If both set, treat as override (and log to decisions.md if used).
+max_input_len: null
+max_output_len: null
+batch_size: null               # null = engine default; tune per model
+
+# ── Judges (phased) ────────────────────────────────────────────────────────
+judge_primary_id: qwen_3_6_27b           # key in subjects.yaml (role: judge_primary)
+judge_crosscheck_id: gemma_4_31b         # second judge (skipped when subject == this)
+crosscheck_subset_size: 200              # paper Appendix D.2.2 validation size
+judge_prompt_path: configs/judge_prompt.yaml          # 9-cat harm prompt (Stage 2 T2.0)
+role_expression_prompt_path: configs/role_expression_prompt.yaml
+
+# ── Datasets ───────────────────────────────────────────────────────────────
+# Safety eval ALWAYS runs on both per CONVENTIONS "Jailbreak datasets".
+datasets:
+  - dan
+  - shah_reconstructed
+
+# Capability benchmarks — list of {ifeval, mmlu_pro, gsm8k, eq_bench}; empty
+# list disables capability eval for this experiment.
+capability_benchmarks:
+  - ifeval
+  - mmlu_pro
+  - gsm8k
+  - eq_bench
+
+# ── Steering / capping (Stage 4+) ──────────────────────────────────────────
+steering:
+  mode: none                   # none | addition | ablation | capping | mean_ablation
+  vectors: []                  # list of paths to .safetensors direction tensors
+  coefficients: []             # one per vector
+  cap_thresholds: []           # used when mode=capping
+  layers: []                   # int list (steering) or list of ranges (capping)
+  positions: all               # all | last
+  capping_config_ref: null     # optional: pointer into configs/paper_capping_ranges.yaml
+
+# ── Output / resume ────────────────────────────────────────────────────────
+output_dir: _template_         # override per experiment, e.g. "results/exp1_pca_decomposition/"
+resume_from_manifest: null     # null = auto (read existing manifest in output_dir)
+fresh: false                   # true = ignore existing manifest, start over

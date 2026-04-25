@@ -27,6 +27,7 @@ dependencies = [
     # Config + env
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
+    "pydantic>=2,<3",
     "tqdm>=4.66",
     # Visualization
     "plotly>=5.24",
@@ -58,7 +59,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
-ignore = ["E501"]
+# Scientific Python convention: capital `X`, `L`, `M`, `Q` are idiomatic for
+# design matrices, layer indices, and matrix decomposition outputs. Forcing
+# lowercase here hurts readability. (PEP 8 ed. 4 carves out a similar exception
+# for "where the existing convention dictates otherwise".)
+ignore = ["E501", "N803", "N806"]
 
 [tool.mypy]
 python_version = "3.12"

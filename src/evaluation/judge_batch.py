@@ -12,14 +12,16 @@ Supports both judge variants:
 The actual prompt template lives outside this module (configs/judge_prompt.yaml
 or configs/role_expression_prompt.yaml). This module is template-agnostic.
 """
+
 from __future__ import annotations
 
 import gc
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 import torch
@@ -34,7 +36,7 @@ class JudgeConfig:
     attention_backend: str | None = None
     max_input_len: int = 4096
     max_output_len: int = 128
-    chat_template_kwargs: dict | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
 
 
 _INT_RE = re.compile(r"\b(\d+)\b")
@@ -114,10 +116,9 @@ def run_judge_batch(
     prompts: list[str] = []
     for _, r in rows.iterrows():
         raw = prompt_builder(r.to_dict())
-        conv = [{"role": "user", "content": raw}]
-        s = tokenizer.apply_chat_template(
-            conv, tokenize=False, add_generation_prompt=True, **ctk
-        )
+        conv: list[Any] = [{"role": "user", "content": raw}]
+        s = tokenizer.apply_chat_template(conv, tokenize=False, add_generation_prompt=True, **ctk)
+        assert isinstance(s, str)  # tokenize=False guarantees str return
         prompts.append(s)
 
     sp = SamplingParams(temperature=0.0, top_p=1.0, max_tokens=cfg.max_output_len, seed=seed)
@@ -134,9 +135,9 @@ def run_judge_batch(
     out.attrs["judge_hf_id"] = cfg.hf_id
     out.attrs["judge_load_seconds"] = round(t_load, 2)
     out.attrs["judge_gen_seconds"] = round(t_gen, 2)
-    out.attrs["judge_tokens_per_sec"] = round(
-        sum(len(o.outputs[0].token_ids) for o in outputs) / t_gen, 2
-    ) if t_gen > 0 else None
+    out.attrs["judge_tokens_per_sec"] = (
+        round(sum(len(o.outputs[0].token_ids) for o in outputs) / t_gen, 2) if t_gen > 0 else None
+    )
 
     del llm
     gc.collect()
@@ -147,6 +148,7 @@ def run_judge_batch(
 def write_parquet(df: pd.DataFrame, path: Path) -> None:
     """Write DataFrame to parquet, preserving top-level metadata in a sibling .attrs.json."""
     import json
+
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False)
     attrs_path = path.with_suffix(".attrs.json")

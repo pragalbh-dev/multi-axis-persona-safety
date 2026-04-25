@@ -1,73 +1,77 @@
 # Subject + judge model configurations for vLLM.
 #
-# Each entry records: HF ID of the fp8 checkpoint, the base (for tokenizer
-# reference), tensor_parallel_size, vLLM loader knobs, and any chat-template
-# kwargs needed to control thinking mode.
+# Each entry records: HF ID of the bf16 base checkpoint, tensor_parallel_size,
+# vLLM loader knobs, and any chat-template kwargs needed to control thinking
+# mode.
 #
-# Verified against HuggingFace 2026-04-24 (see plans/decisions.md 17:40).
+# Precision: bf16 across all core stages on 4x RTX 5090 (TP=4, 128 GB total).
+# fp8 fallback only for Stage 7 Ext 9 (Llama 70B); see plans/decisions.md
+# 2026-04-25 fp8 -> bf16 revert entry.
+#
+# Verified against HuggingFace 2026-04-24/25 (see plans/decisions.md).
 
 gemma_2_27b:
   role: subject
-  hf_id: Infermatic/gemma-2-27b-it-FP8-Dynamic
+  hf_id: google/gemma-2-27b-it
   base_hf_id: google/gemma-2-27b-it
-  tensor_parallel_size: 2
+  tensor_parallel_size: 4
   gpu_memory_utilization: 0.85
   trust_remote_code: false
-  attention_backend: null             # default (TRITON_ATTN is fine for Gemma 2)
+  attention_backend: null
   chat_template_kwargs: {}
   notes: |
-    Community fp8-dynamic (activations quantized at runtime). No official Google fp8.
-    46-layer Gemma2ForCausalLM. Thinking mode: N/A (Gemma 2 pre-dates thinking).
+    bf16 base (gated; license accepted on account ub0001).
+    46-layer Gemma2ForCausalLM, d_model 4608. 32 attention heads -> divides
+    cleanly by TP=4. Thinking mode: N/A (Gemma 2 pre-dates thinking).
 
 qwen_3_32b:
   role: subject
-  hf_id: Qwen/Qwen3-32B-FP8
+  hf_id: Qwen/Qwen3-32B
   base_hf_id: Qwen/Qwen3-32B
-  tensor_parallel_size: 2
+  tensor_parallel_size: 4
   gpu_memory_utilization: 0.85
   trust_remote_code: false
   attention_backend: null
   chat_template_kwargs:
-    enable_thinking: false            # paper reproduction fidelity
+    enable_thinking: false              # paper reproduction fidelity
   notes: |
-    Official Qwen fp8. 64-layer Qwen3ForCausalLM. Toggle thinking off via
-    chat_template_kwargs.enable_thinking=False.
+    bf16 base. 64-layer Qwen3ForCausalLM, d_model 5120. 64 attention heads
+    -> TP=4 splits cleanly. Toggle thinking off via chat_template_kwargs.
 
 gemma_4_31b:
   role: subject
-  hf_id: RedHatAI/gemma-4-31B-it-FP8-block
+  hf_id: google/gemma-4-31B-it
   base_hf_id: google/gemma-4-31B-it
-  tensor_parallel_size: 2
+  tensor_parallel_size: 4
   gpu_memory_utilization: 0.85
-  trust_remote_code: true             # Gemma 4 is multimodal with custom ops
-  attention_backend: TRITON_ATTN      # vLLM #40677: FLASHINFER breaks Gemma 4 on Blackwell
-  chat_template_kwargs: {}            # per-call override for thinking ON/OFF (see smoke_load)
-  thinking_modes: ["on", "off"]       # quoted: bare on/off are YAML booleans
+  trust_remote_code: true               # Gemma 4 multimodal custom ops
+  attention_backend: null               # FLASHINFER bug (vLLM #40677) was fp8-codepath specific; bf16 path uses default
+  chat_template_kwargs: {}              # per-call override for thinking ON/OFF (see smoke_load)
+  thinking_modes: ["on", "off"]         # quoted: bare on/off are YAML booleans
   notes: |
-    Community fp8-block (compressed-tensors float-quantized).
-    Gemma4ForConditionalGeneration (multimodal); we use text-only.
-    60-layer text transformer (hidden 5376). trust_remote_code required.
-    MUST use TRITON_ATTN on Blackwell per vLLM #40677.
+    bf16 base. Gemma4ForConditionalGeneration (multimodal; text-only use here).
+    60-layer text transformer, d_model 5376. trust_remote_code required.
+    Smoke C5 must verify TRITON_ATTN is unnecessary on the bf16 path; if
+    FLASHINFER breaks here too, re-add attention_backend: TRITON_ATTN.
 
 qwen_3_6_27b:
   role: judge_primary
-  hf_id: Qwen/Qwen3.6-27B-FP8
+  hf_id: Qwen/Qwen3.6-27B
   base_hf_id: Qwen/Qwen3.6-27B
-  tensor_parallel_size: 2
-  gpu_memory_utilization: 0.70         # 0.60 had no KV room; 0.85/0.75 overshot during warmup. Sweet spot w/ enforce_eager.
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.85
   trust_remote_code: false
   attention_backend: null
-  enforce_eager: true                   # skip CUDA graph capture (saves ~2 GB)
-  max_model_len: 1024
+  max_model_len: 2048
   chat_template_kwargs:
-    enable_thinking: false              # Stage 0 discovered Qwen 3.6 defaults to thinking ON; disable for judge
+    enable_thinking: false              # Qwen 3.6 defaults to thinking ON; disable for judge use
   notes: |
-    Official Qwen fp8, released 2026-04-22, last modified 2026-04-24.
-    Qwen3_5ForConditionalGeneration multimodal architecture; text-only use.
-    64-layer text transformer (hidden 5120). No thinking mode (non-thinking family).
-    Multimodal vision weights load even for text-only use. Stage 0 smoke OOMed
-    at gmu=0.85 AND 0.75; at 0.60 + enforce_eager + max_model_len=1024 it fits.
-    For judge use (input < 1024 tokens typical), this is adequate.
+    bf16 base, judge model. Qwen3_5ForConditionalGeneration (multimodal arch;
+    text-only use). 64-layer text transformer, d_model 5120.
+    Stage 0 fp8 + multimodal hit OOM workarounds (enforce_eager, gmu=0.70,
+    max_model_len=1024). At bf16/TP=4, those workarounds are dropped — smoke
+    C6 must confirm. If multimodal vision weights still pressure VRAM, the
+    fallback is still gpu_memory_utilization: 0.75 + enforce_eager: true.
 
 # Cross-check judge reuses the gemma_4_31b entry above with thinking OFF and
 # self-preference enforcement (skip when subject is Gemma 4 31B).

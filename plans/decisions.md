@@ -213,3 +213,32 @@ Smoke test: `--n-per-category 2 --categories openai13` produced 26 rows (2 per c
 
 **Downstream dependencies:** Optional secondary eval set for Stage 4-6 (lets us sanity-check that DAN-vs-Shah-style results agree). NOT a Stage 0 critical-path artifact — DAN primary set fills the same role. Full-scale run is deferred to user (multi-hour, ran out-of-band).
 
+---
+
+## [2026-04-25 07:47] Stage 1 / T1.8 — Revert fp8/2-GPU → bf16/4-GPU for core stages
+
+**Decision:** All 4 RTX 5090s on the box are now available to this project (the parallel `nvidia/Gemma-4-31B-IT-NVFP4` LoRA-tuning workload on GPUs 0,1 has finished). Switch core stages from "fp8 quantized at TP=2" to **bf16 at TP=4** for all 4 subjects + the primary judge. Working-tree changes already applied: `src/utils/env.py` widens `CUDA_VISIBLE_DEVICES` from `2,3` → `0,1,2,3`; `configs/subjects.yaml` rewrites every entry to use the bf16 base HF IDs (`google/gemma-2-27b-it`, `Qwen/Qwen3-32B`, `google/gemma-4-31B-it`, `Qwen/Qwen3.6-27B`) at `tensor_parallel_size: 4`. `Infermatic/gemma-2-27b-it-FP8-Dynamic`, `Qwen/Qwen3-32B-FP8`, `RedHatAI/gemma-4-31B-it-FP8-block`, and `Qwen/Qwen3.6-27B-FP8` are no longer referenced by core configs; their decisions.md entries (2026-04-24 17:40 and Stage 0 T0.4/T0.5 batch-size logs) become historical context, not active state.
+
+**Alternatives considered:**
+- Keep fp8/TP=2 to preserve Stage 0 smoke-load numbers and avoid re-running tuning — rejected because the original constraint that forced fp8 (64 GB total VRAM) is gone, and bf16 removes a class of risk (per-subject quant-validity check, fp8 extraction-fidelity unknowns, Gemma 4 FLASHINFER fp8 codepath bug per vLLM #40677). Bf16 is the paper's reference precision.
+- Keep fp8 at TP=4 instead of bf16 — would gain a bit of throughput but keeps the quant-validity gate in the critical path; user judgment was that the simplicity of bf16 wins now that VRAM allows it. Re-pickable later if any model OOMs at TP=4 bf16.
+- Move Llama 3.3 70B back into core stages — rejected. 70B × bf16 ≈ 140 GB just for weights, exceeds 128 GB total. Llama stays at Stage 7 Ext 9, where the original plan's fp8 path (or NVFP4 fallback) is the only way to fit it.
+
+**Reason:** GPUs 0,1 became available, removing the constraint that motivated fp8. Bf16 = paper's reference precision = no extraction-fidelity argument needed in the report = no Stage 3 T3.1.0 quant-validity gate. The grid-search work in commits 88081e4..f094689 ("[Stage 1 / prep]") tuned inference under the new 4-GPU bf16 path; subjects.yaml changes already reflect those numbers.
+
+**Source:**
+- User instruction in chat 2026-04-25 ("we are working on this project and currently stage 0 agent is working on creating the env" + working-tree subjects.yaml comment "revert from Stage 0's 2-GPU constraint; see plans/decisions.md 2026-04-25 fp8->bf16 entry").
+- Working-tree diffs: `configs/subjects.yaml` (TP=4, bf16 IDs), `src/utils/env.py` (CUDA_VISIBLE_DEVICES=0,1,2,3), `scripts/{smoke_load,phased_pipeline_smoke}.py` (matching updates).
+- Recent commits 5e7901d..f094689 ("[Stage 1 / prep] grid search …") — inference grid search under the new precision/TP regime.
+
+**Reversibility:** medium. Reverting to fp8/TP=2 means re-editing `configs/subjects.yaml`, `src/utils/env.py`, and re-running the Stage 0 smoke load + grid search. No experiment artifacts depend on this yet (Stage 1 is design-only); reversion before Stage 3 T3.1 actually runs has zero data cost. After Stage 3 it would invalidate cached activations.
+
+**How to revert:** `git checkout HEAD -- configs/subjects.yaml src/utils/env.py scripts/smoke_load.py scripts/phased_pipeline_smoke.py`, then re-run Stage 0 T0.4/T0.5/T0.11 smoke loads. Re-instate the "Quantization policy (2-GPU constraint)" section in CLAUDE.md and CONVENTIONS.md from this commit's git history. Stage 7 Ext 9 (Llama 70B at fp8) is unaffected — its plan already assumes fp8.
+
+**Downstream dependencies:**
+- `plans/CONVENTIONS.md` — "Quantization policy" section renamed to "Precision policy"; bf16 default for core stages, fp8 reserved for Ext 9 only. Quant-validity check moved from Stage 3 prelude to Ext 9 prerequisites.
+- `CLAUDE.md` — "Models" / "Hardware" / "Quantization policy" lines updated to 4-GPU TP=4 bf16. The "All subjects run quantized" claim and the 2-GPU-constraint asides are now historical.
+- `configs/experiment_template.yaml` (Stage 1 T1.6.5) — defaults `dtype: bf16`, `tensor_parallel: 4`.
+- Stage 3 T3.1.0 quant-validity gate becomes a no-op for core subjects (still applied to any future fp8 subject; documented as Ext 9 prerequisite).
+- `pyproject.toml` does NOT need changes — `vllm==0.19.1` runs both bf16 and fp8.
+
