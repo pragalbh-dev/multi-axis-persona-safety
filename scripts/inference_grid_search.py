@@ -43,20 +43,25 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # ----------------- profiles + grid -----------------
 
 # Profile definition: max_model_len + the eval-dataset names that feed it.
-# Output budgets are per-task; for the workload sampler we pick a representative
-# split, so we set a single output_max here that covers the profile.
+# `enable_prefix_caching=True` is a clear win for the judge profile (judge
+# template is a constant ~2 KB prefix shared across all 1,100 prompts → KV
+# cache hits on every prefix token). For subject profiles each prompt is
+# unique so prefix caching is neutral; we leave it off to keep the throughput
+# measurement uncontaminated by KV cache hits in the workload sample.
 PROFILES: dict[str, dict[str, Any]] = {
     "short": {
         "max_model_len": 2048,
         "tasks": ["ifeval", "gsm8k_1000", "mmlu_pro_1400", "eq_bench", "extraction_questions"],
         "output_max": 1024,
         "applies_to_role": "subject",
+        "enable_prefix_caching": False,
     },
     "long": {
         "max_model_len": 8192,
         "tasks": ["dan_jailbreak"],
         "output_max": 1024,
         "applies_to_role": "subject",
+        "enable_prefix_caching": False,
     },
     "judge": {
         "max_model_len": 4096,
@@ -65,17 +70,23 @@ PROFILES: dict[str, dict[str, Any]] = {
         "tasks": ["dan_jailbreak"],
         "output_max": 128,
         "applies_to_role": "judge_primary",
+        "enable_prefix_caching": True,    # judge prompt template is a shared prefix
     },
 }
 
-GRID_CELLS: list[dict[str, Any]] = [
-    {"gpu_memory_utilization": 0.85, "max_num_seqs": 64,  "enforce_eager": False},
-    {"gpu_memory_utilization": 0.92, "max_num_seqs": 64,  "enforce_eager": False},
-    {"gpu_memory_utilization": 0.92, "max_num_seqs": 128, "enforce_eager": False},
-    {"gpu_memory_utilization": 0.92, "max_num_seqs": 256, "enforce_eager": False},
-    {"gpu_memory_utilization": 0.95, "max_num_seqs": 128, "enforce_eager": False},
-    {"gpu_memory_utilization": 0.92, "max_num_seqs": 128, "enforce_eager": True},   # control: no CUDA graph
+# Outer grid (varies gmu + enforce_eager). max_num_seqs is determined by
+# inner binary search per outer cell — try descending from 512 until OOM is
+# avoided. The highest survivor wins; tokens/sec increases monotonically with
+# max_num_seqs up to the KV cache budget.
+OUTER_CELLS: list[dict[str, Any]] = [
+    {"gpu_memory_utilization": 0.92, "enforce_eager": False},  # primary candidate
+    {"gpu_memory_utilization": 0.95, "enforce_eager": False},  # higher util — does it still fit?
+    {"gpu_memory_utilization": 0.85, "enforce_eager": False},  # safety baseline
+    {"gpu_memory_utilization": 0.92, "enforce_eager": True},   # control — quantify CUDA graph speedup
 ]
+
+# Probe values for max_num_seqs binary descent. Try highest first; first fit wins.
+MAX_SEQS_PROBE: list[int] = [512, 256, 128, 64, 32]
 
 
 # ----------------- workload sampler -----------------
@@ -173,6 +184,7 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
         max_model_len=p["max_model_len"],
         max_num_seqs=max_seqs,
         enforce_eager=enforce_eager,
+        enable_prefix_caching=p.get("enable_prefix_caching", False),
         seed=42,
     )
     t_load = time.time() - t_load_0
@@ -233,57 +245,97 @@ def _run_single(family: str, profile: str, gmu: float, max_seqs: int, enforce_ea
 
 # ----------------- grid driver (parent process) -----------------
 
-def run_grid(family: str, profile: str) -> Path:
-    """Run all grid cells for (family, profile). Each cell = fresh subprocess."""
-    print(f"\n=== GRID: {family} / {profile} ===", flush=True)
-    for cell in GRID_CELLS:
-        cell_label = (
-            f"{family}__{profile}__gmu{int(cell['gpu_memory_utilization']*100)}"
-            f"_seq{cell['max_num_seqs']}_eager{int(cell['enforce_eager'])}"
-        )
-        out_path = RESULTS_DIR / f"{cell_label}.json"
+def _cell_label(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: bool) -> str:
+    return (
+        f"{family}__{profile}__gmu{int(gmu*100)}"
+        f"_seq{max_seqs}_eager{int(enforce_eager)}"
+    )
+
+
+def _spawn(family: str, profile: str, gmu: float, max_seqs: int, enforce_eager: bool) -> tuple[int, Path]:
+    """Run a single cell in a fresh subprocess. Returns (returncode, out_path)."""
+    label = _cell_label(family, profile, gmu, max_seqs, enforce_eager)
+    out_path = RESULTS_DIR / f"{label}.json"
+    cmd = [
+        sys.executable, str(Path(__file__).resolve()),
+        "--single", family, profile,
+        "--gmu", str(gmu),
+        "--max-seqs", str(max_seqs),
+    ]
+    if enforce_eager:
+        cmd.append("--enforce-eager")
+    try:
+        r = subprocess.run(cmd, check=False, timeout=1200)
+        if r.returncode != 0 and not out_path.exists():
+            out_path.write_text(json.dumps({
+                "family": family, "profile": profile,
+                "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
+                "status": "fail", "returncode": r.returncode,
+            }, indent=2))
+        return r.returncode, out_path
+    except subprocess.TimeoutExpired:
+        out_path.write_text(json.dumps({
+            "family": family, "profile": profile,
+            "cell": {"gpu_memory_utilization": gmu, "max_num_seqs": max_seqs, "enforce_eager": enforce_eager},
+            "status": "timeout",
+        }, indent=2))
+        return -1, out_path
+
+
+def _binary_descent_max_seqs(family: str, profile: str, gmu: float, enforce_eager: bool) -> dict | None:
+    """Try max_num_seqs values in MAX_SEQS_PROBE descending; return the first that succeeds.
+    A 'success' is defined as a JSON record with status == 'ok' and tokens_per_sec > 0.
+    Higher max_num_seqs ⇒ more concurrent sequences ⇒ higher throughput up to the KV cache
+    boundary, so the first survivor is the throughput winner for this (gmu, eager) cell.
+    """
+    for n in MAX_SEQS_PROBE:
+        label = _cell_label(family, profile, gmu, n, enforce_eager)
+        out_path = RESULTS_DIR / f"{label}.json"
         if out_path.exists():
-            print(f"[{cell_label}] EXISTS — skipping", flush=True)
-            continue
-        cmd = [
-            sys.executable, str(Path(__file__).resolve()),
-            "--single", family, profile,
-            "--gmu", str(cell["gpu_memory_utilization"]),
-            "--max-seqs", str(cell["max_num_seqs"]),
-        ]
-        if cell["enforce_eager"]:
-            cmd.append("--enforce-eager")
-        # Failure of one cell shouldn't kill the grid; record fail and continue.
-        try:
-            r = subprocess.run(cmd, check=False, timeout=900)
-            if r.returncode != 0:
-                fail_record = {
-                    "family": family, "profile": profile, "cell": cell,
-                    "status": "fail", "returncode": r.returncode,
-                }
-                out_path.write_text(json.dumps(fail_record, indent=2))
-                print(f"[{cell_label}] FAIL rc={r.returncode}", flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"[{cell_label}] TIMEOUT", flush=True)
+            rec = json.loads(out_path.read_text())
+            if rec.get("status") == "ok" and rec.get("tokens_per_sec"):
+                print(f"[{label}] CACHED: tps={rec['tokens_per_sec']}", flush=True)
+                return rec
+            else:
+                print(f"[{label}] CACHED FAIL — trying smaller max_num_seqs", flush=True)
+                continue
+        rc, p = _spawn(family, profile, gmu, n, enforce_eager)
+        if rc == 0 and p.exists():
+            rec = json.loads(p.read_text())
+            if rec.get("status") == "ok" and rec.get("tokens_per_sec"):
+                return rec
+        # else: OOM / timeout / other error — fall through to a smaller max_num_seqs
+        print(f"[{label}] failed (rc={rc}) — backing off to next smaller max_num_seqs", flush=True)
+    return None
+
+
+def run_grid(family: str, profile: str) -> Path:
+    """Run all OUTER_CELLS × binary descent on max_num_seqs for (family, profile)."""
+    print(f"\n=== GRID: {family} / {profile} ===", flush=True)
+    winners_per_outer: list[dict] = []
+    for cell in OUTER_CELLS:
+        gmu = cell["gpu_memory_utilization"]
+        eager = cell["enforce_eager"]
+        print(f"\n-- outer cell gmu={gmu} eager={eager} (binary descent on max_num_seqs) --", flush=True)
+        rec = _binary_descent_max_seqs(family, profile, gmu, eager)
+        if rec is not None:
+            winners_per_outer.append(rec)
+        else:
+            print(f"-- outer cell gmu={gmu} eager={eager} FAILED at all max_num_seqs --", flush=True)
 
     summary_path = RESULTS_DIR / f"_summary_{family}__{profile}.json"
-    cells = []
-    for cell in GRID_CELLS:
-        label = (
-            f"{family}__{profile}__gmu{int(cell['gpu_memory_utilization']*100)}"
-            f"_seq{cell['max_num_seqs']}_eager{int(cell['enforce_eager'])}"
-        )
-        p = RESULTS_DIR / f"{label}.json"
-        if p.exists():
-            cells.append(json.loads(p.read_text()))
-    cells.sort(key=lambda r: -(r.get("tokens_per_sec") or 0))
-    summary_path.write_text(json.dumps({"cells_ranked": cells}, indent=2))
-    if cells:
-        winner = cells[0]
+    winners_per_outer.sort(key=lambda r: -(r.get("tokens_per_sec") or 0))
+    summary_path.write_text(json.dumps({
+        "cells_ranked": winners_per_outer,
+        "outer_grid": OUTER_CELLS,
+        "max_seqs_probe": MAX_SEQS_PROBE,
+    }, indent=2))
+    if winners_per_outer:
+        w = winners_per_outer[0]
         print(
-            f"\n=== {family} / {profile} winner: gmu={winner['cell']['gpu_memory_utilization']}, "
-            f"max_seqs={winner['cell']['max_num_seqs']}, eager={winner['cell']['enforce_eager']} "
-            f"-> {winner['tokens_per_sec']} tok/s, vram={winner['peak_vram_total_gb']} GB",
+            f"\n=== {family} / {profile} winner: gmu={w['cell']['gpu_memory_utilization']}, "
+            f"max_seqs={w['cell']['max_num_seqs']}, eager={w['cell']['enforce_eager']} "
+            f"-> {w['tokens_per_sec']} tok/s, vram={w['peak_vram_total_gb']} GB",
             flush=True,
         )
     return summary_path
