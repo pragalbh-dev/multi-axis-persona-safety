@@ -1,0 +1,124 @@
+# Per (family, profile) inference config — chosen by grid search.
+#
+# Source: results/inference_grid/_summary_<family>__<profile>.json
+# Grid script: scripts/inference_grid_search.py (binary descent on max_num_seqs,
+# 4 outer cells × {gmu, enforce_eager}, 30-prompt realistic workload from eval data).
+# All measurements: bf16, TP=4, 4× RTX 5090, vLLM 0.19.1 + CUDA graphs (cudagraph_capture_sizes default).
+#
+# Where the winner was at the VRAM edge (≥133 GB / 134 GB total = ≈33 GB/GPU
+# of 32 GB cap, indicating allocator pressure), we picked the runner-up that
+# gave equivalent throughput (within 1%) but with 15-20 GB more headroom.
+# Always use enforce_eager=False (CUDA graphs give 1.5-2.2× speedup).
+#
+# A profile defines: max_model_len + which datasets feed it.
+#   short    max_model_len=2048: IFEval, GSM8k, MMLU-Pro, EQ-Bench, extraction questions
+#   long     max_model_len=8192: DAN jailbreak (subject rollouts only)
+#   judge    max_model_len=4096: 9-cat harm + 3-label role-expression on a shared template prefix
+
+defaults:
+  enforce_eager: false              # CUDA graphs mandatory; eager always loses
+  trust_remote_code: false          # subject-specific override below
+  attention_backend: null           # use vLLM default (TRITON_ATTN typical)
+  enable_prefix_caching: false      # only judge enables it (shared template)
+
+gemma_2_27b:
+  hf_id: google/gemma-2-27b-it
+  base_hf_id: google/gemma-2-27b-it
+  tensor_parallel_size: 4
+  trust_remote_code: false
+  profiles:
+    short:
+      max_model_len: 2048
+      gpu_memory_utilization: 0.80
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 761.9
+      measured_vram_total_gb: 119.3
+    long:
+      max_model_len: 8192
+      gpu_memory_utilization: 0.85
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 542.2
+      measured_vram_total_gb: 126.0
+
+qwen_3_32b:
+  hf_id: Qwen/Qwen3-32B
+  base_hf_id: Qwen/Qwen3-32B
+  tensor_parallel_size: 4
+  trust_remote_code: false
+  chat_template_kwargs:
+    enable_thinking: false          # paper reproduction fidelity
+  profiles:
+    short:
+      max_model_len: 2048
+      gpu_memory_utilization: 0.75
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 695.0
+      measured_vram_total_gb: 116.2
+    long:
+      max_model_len: 8192
+      gpu_memory_utilization: 0.85
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 309.0
+      measured_vram_total_gb: 129.6
+
+gemma_4_31b:
+  hf_id: google/gemma-4-31B-it
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 4
+  trust_remote_code: true           # multimodal custom ops
+  thinking_modes: ["on", "off"]     # used by smoke_load + extraction
+  profiles:
+    short:
+      max_model_len: 2048
+      gpu_memory_utilization: 0.75   # picked runner-up over winner gmu=0.90/seq=256 (1% slower, 19 GB more headroom)
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 628.9            # (winner gmu=0.90/256 measured 634.7 at 133 GB VRAM)
+      measured_vram_total_gb: 114.2
+    long:
+      max_model_len: 8192
+      gpu_memory_utilization: 0.85   # picked second-place over edge-case gmu=0.90/256 (0.5% slower, 13 GB more headroom)
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 328.4
+      measured_vram_total_gb: 127.7
+
+qwen_3_6_27b:
+  role: judge_primary
+  hf_id: Qwen/Qwen3.6-27B
+  base_hf_id: Qwen/Qwen3.6-27B
+  tensor_parallel_size: 4
+  trust_remote_code: false
+  chat_template_kwargs:
+    enable_thinking: false          # Qwen 3.6 defaults to thinking ON; disable for judge
+  profiles:
+    judge:
+      max_model_len: 4096
+      gpu_memory_utilization: 0.75   # picked runner-up over winner gmu=0.90/seq=256 (0.1% slower, 20 GB more headroom)
+      max_num_seqs: 512
+      enable_prefix_caching: true    # judge prompt template is constant across calls — big KV cache hit
+      measured_tps: 677.8            # (winner gmu=0.90/256 measured 678.7 at 134 GB)
+      measured_vram_total_gb: 113.4
+
+# Known caveats:
+#   - 30-prompt workload may be under-saturating: published benchmarks at
+#     1× H100 hit 1,200-2,000 tok/s on these models with 128-1000 concurrent.
+#     Our 4× 5090 should match a single H100 ish (memory BW), so ~1,500 tok/s
+#     is the theoretical ceiling. We see ~700 tok/s on 30 prompts because
+#     scheduler occupancy is only ~6% of max_num_seqs=512. Larger workloads
+#     in production should climb closer to 1,000-1,500 tok/s.
+#     See subagent benchmark survey saved to results/inference_grid/_benchmark_survey.md
+#     (when written).
+#   - Gemma 4 31B and Qwen 3.6 27B are multimodal (Gemma4ForConditionalGeneration,
+#     Qwen3_5ForConditionalGeneration). Vision weights load even for text-only
+#     use (~3-5 GB extra per GPU). VRAM headroom factored into the configs above.
+#   - First load of multimodal models is slow (Gemma 4: 90-125s, Qwen 3.6:
+#     117-211s). Subsequent loads use vLLM's torch.compile AOT cache and drop
+#     to 50-90s.
+#   - Qwen 3.6 judge prefix caching is enabled because every judge call uses
+#     the same multi-KB template prefix. Subject profiles disable it because
+#     each prompt is unique.
