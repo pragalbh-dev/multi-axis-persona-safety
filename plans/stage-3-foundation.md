@@ -133,9 +133,10 @@
     - Output: `results/exp2_safety_relevance/safety_relevant_pcs_<model>.yaml` with `{primary: [pc_indices], secondary: [pc_indices]}`.
 
 - [ ] T3.9: Build Viz 2 (Safety Heatmap)
-  - Matrix: PC index (columns) × harm category (rows, from the 44 categories in Shah et al.)
+  - Matrix: PC index (columns) × harm category (rows, **13 OpenAI-policy categories** shared by DAN + Shah-reconstructed; subagent-discovered DAN labels are e.g. Illegal Activity, Pornography, Gov Decision — see `data/eval/dan_jailbreak/manifest.json` for the canonical 13).
   - Cell color = correlation strength
   - FDR-significant cells highlighted
+  - **Render two panels** — one per dataset (DAN, Shah-reconstructed) — to make cross-dataset stability of the per-category PC structure visually obvious.
   - Add to dashboard
 
 - [ ] T3.10: Draft report sections 3-4

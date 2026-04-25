@@ -25,6 +25,7 @@
   - Write the binarization rule in code: `harm = 1 if label in {"enough_info", "enough_info_and_follow_perfectly"} else 0`. Unit test both the parser and the binarizer.
   - **Role-expression judge prompt** — if not already pulled by Stage 0 T0.7, save paper's 3-label prompt (`fully role-playing / somewhat role-playing / no role-playing`) from Appendix A to `configs/role_expression_prompt.yaml` with the same JSON schema pattern. Reference paper line 87.
   - **Clarifying note — one judge model, two prompts:** Qwen 3.6-27B is the only judge model we run. It is invoked with `configs/judge_prompt.yaml` for all safety experiments (T2.4, Stage 3 T3.6, Stage 4 T4.1, etc.) AND with `configs/role_expression_prompt.yaml` only during role-vector extraction for Tier 2 subjects (Stage 3 T3.1). The experiments themselves are identical between Tier 1 and Tier 2; the role-expression prompt is pipeline infrastructure, not an experimental knob.
+  - **Gemma 2 27B capping config transcription** — paper Appendix F has the per-subject AA capping range; Stage 0 T0.7 only got Qwen 3 32B + Llama 3.3 70B verbatim (paper §5.1.2 line 691). Read paper Appendix F (search `extracted.md` for "Gemma" + "capping" / "Figure 10" / "Appendix F") and fill in `configs/paper_capping_ranges.yaml.gemma_2_27b.{center, width, layers}` (τ percentile already at 25th per paper convention). Without this, Stage 4 T4.0 Tier-1 reproduction can't run for Gemma 2.
 
 - [ ] T2.1: Implement activation extraction pipeline
   - `src/extraction/extractor.py` — TransformerLens backend
@@ -32,6 +33,13 @@
   - `src/extraction/cache.py` — save/load activation caches as **safetensors** + sibling `.meta.json` (NOT parquet — tensors are wrong fit for parquet)
   - Support: batch extraction, layer selection, **mean over response tokens** (default) / last-token / thinking-vs-answer token masks (for Tier 2 reasoning mode)
   - Test: extract activations for 10 prompts on Gemma 2 27B, verify shape and values
+
+- [ ] T2.1.6: Model-runner subprocess wrapper (CRITICAL — Stage 0 finding)
+  - **Reason for new task:** Stage 0 verified that vLLM TP=2 in-process teardown (`del llm; gc.collect(); torch.cuda.empty_cache()`) does **not** fully release VRAM. Resource_tracker leaks 6 semaphores per teardown; ~25 GB stays resident on each GPU after the 2nd-3rd model. By model 4-5 in one Python process we OOMed. Sequential phased pipelines (subject → judge → cross-check) MUST spawn fresh subprocesses. Stage 0 → Stage 1 Handoff in `progress.md` documents this in detail.
+  - `src/utils/model_runner.py` — `run_in_subprocess(family, work_module, work_args_dict, output_path) -> dict`. Internally: serialize `work_args_dict` to JSON, spawn `subprocess.run([sys.executable, "-m", work_module, "--args-json", path, "--output", path])` with `check=True`, parse the output JSON (which the child writes after vLLM teardown). Parent process never imports torch.
+  - Each work module (`src.evaluation.judge.run`, `src.extraction.extractor.run`, `src.steering.capper.run`) is invokable as `python -m <module>` with stable JSON args + return contract.
+  - Test: load Gemma 2 27B FP8 in subprocess, generate 5 prompts, exit. Verify parent VRAM is at baseline (≤200 MiB on GPUs 2,3) after the call returns. Repeat 6× sequentially — no leak across calls.
+  - All downstream Stage 2/3/4/6 harnesses (T2.3 capper, T2.4 judge driver, Stage 3 extractor, Stage 4 capper sweep) consume this; no in-process LLM loads in production code.
 
 - [ ] T2.1.5: Implement the quantization-validity check utility (per CONVENTIONS "Quantization validity check")
   - `src/evaluation/quant_validity.py` — one function per check mode.
@@ -55,7 +63,9 @@
   - Test: (a) steer Gemma 2 27B on PC1 at strength 1.0 at the middle layer (single), verify output changes qualitatively; (b) cap Gemma 2 27B on PC1 with τ at 25th percentile over an 8-layer range in the middle-to-late band, verify harm drops on a 20-prompt jailbreak sample.
 
 - [ ] T2.4: Implement safety evaluation harness (phased)
-  - `src/evaluation/safety_eval.py` — **subject phase.** Loads subject model on all 4 GPUs, runs jailbreak prompts batched, writes `(prompt_id, condition, response, activations)` rows to `results/exp{N}_{name}/responses.parquet`, tears down.
+  - **Sub-step 0 (judge runtime probe — Stage 0 finding):** before building the harness, find the largest judge config that fits in 64 GB at TP=2 with realistic prompts. Sample 100 jailbreak prompts from `data/eval/dan_jailbreak/sampled_1100.parquet`, pair with synthetic ~500-token responses (use Stage 3 T3.6 baseline outputs once available, or generate on Gemma 2 27B for the probe). Sweep the judge config: `max_model_len ∈ {1024, 2048, 4096}`, `enforce_eager ∈ {True, False}`, `compilation_config.cudagraph_capture_sizes ∈ {[1,4], [1,8,32], full}`. Pick the highest-throughput config that (a) fits TP=2 in 64 GB without OOM during warmup, (b) zero truncated inputs at chosen max_model_len, (c) ≥10 labels/sec on the 100 prompts, (d) `enable_thinking=False` (Stage 0 confirmed required — Qwen 3.6-27B defaults to thinking output). Write chosen config to **`configs/judge_runtime.yaml`**; the harness below reads from there.
+  - **Dual-dataset rule:** every safety eval call in this harness runs on **both** the DAN primary set (`data/eval/dan_jailbreak/sampled_1100.parquet`) AND the Shah-reconstructed secondary set (`data/eval/reconstructed_jailbreak/sampled_1100.parquet`, when ready). Outputs are tagged with a `dataset` column (`dan` / `shah_reconstructed`) and reported separately. See CONVENTIONS "Jailbreak datasets".
+  - `src/evaluation/safety_eval.py` — **subject phase.** Loads subject model on all 4 GPUs, runs jailbreak prompts batched, writes `(prompt_id, dataset, condition, response, activations)` rows to `results/exp{N}_{name}/responses.parquet`, tears down.
   - `src/evaluation/judge.py` — **judge phase.** Takes a path to a responses parquet, loads the primary judge (Qwen 3.6-27B) on all 4 GPUs, batch-classifies, writes `judge1_label` column back to the parquet, tears down. Optional second invocation with Gemma 4 31B-it for cross-check on a configurable 200-sample subset → writes `judge2_label` column.
   - `src/evaluation/orchestrator.py` — the phase driver. Calls subject phase → judge phase → optional cross-check phase in sequence. Handles the **self-preference rule**: when subject is Gemma 4 31B-it, skip the cross-check judge phase (primary only).
   - `src/evaluation/safety_metrics.py` — aggregates from the labelled parquet: harm rate, bootstrap CI, Cohen's d, inter-judge agreement rate (where both labels present).
@@ -65,7 +75,7 @@
 - [ ] T2.4.5: Build the 200-sample GPT-5.5 judge validation set (one-time external spend)
   - Paper reports deepseek-v3 judge at 91.6% agreement with human labels on 200 samples (Appendix D.2.2); paper does **not** release the labeled samples.
   - **Build our own 200-sample pseudo-ground-truth:**
-    - Using the completed safety_eval harness (T2.4), sample 200 `(prompt, response)` pairs uniformly across the 44 Shah et al. harm categories (≈4-5 per category), balanced across compliant / refusal / ambiguous response types.
+    - Using the completed safety_eval harness (T2.4), sample 200 `(prompt, response)` pairs uniformly across the 13 OpenAI-policy categories used by both DAN and the Shah-reconstructor (~15 per category), balanced across compliant / refusal / ambiguous response types and across both datasets (100 from DAN + 100 from Shah-reconstructed).
     - Generate responses on one Tier 1 subject (Gemma 2 27B — cheapest) under 3 conditions: unsteered, assistant-steered (λ=+1), away-steered (λ=-1). Ensures label diversity across the judge's 9-category output space.
     - Label each via **GPT-5.5** using the paper's verbatim judge prompt from `configs/judge_prompt.yaml` (T2.0). One-time API spend ~$5-10.
     - Save to `data/judge_validation/gpt55_labels.parquet` with columns `(prompt, response, condition, gpt55_label, gpt55_raw_output)`.

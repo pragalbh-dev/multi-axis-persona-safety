@@ -39,7 +39,10 @@ Read `plans/plan.md` for the full stage overview. Read the active stage plan for
 - **Hardware:** 2× RTX 5090 available (32GB each = 64GB total). Two GPUs on the box are occupied by other workloads and NOT accessible. If they free up mid-project, Stage 7 Ext 9 (Llama 3.3 70B reproduction) gets unblocked.
 
 ### Evaluation
-- **Safety:** 1,100 persona-based jailbreak prompts (Shah et al.) — same as the paper
+- **Safety:** **two parallel datasets, every eval runs on both** (locked Stage 0 → Stage 1):
+  - **DAN (primary):** 1,100 in-the-wild persona jailbreaks from TrustAIRLab/in-the-wild-jailbreak-prompts, stratified across 13 OpenAI-policy categories (~85/cat). `data/eval/dan_jailbreak/sampled_1100.parquet`.
+  - **Shah-reconstructed (secondary):** 1,100 synthetic pairs from `src/data/reconstruct_shah_jailbreaks.py` (Shah et al. 2311.03348 methodology; original dataset not publicly released). Same 13-category schema. `data/eval/reconstructed_jailbreak/sampled_1100.parquet`.
+  - Reports tag rows with `dataset ∈ {dan, shah_reconstructed}`. Headline = DAN. Cross-dataset agreement = replication check. See CONVENTIONS "Jailbreak datasets".
 - **Capability:** IFEval (541), MMLU Pro (1,400), GSM8k (1,000), EQ-Bench (171)
 - **Paper's judges (for reference):** paper uses **deepseek-v3** for harm eval, validated against human labels on 200 samples at **91.6% agreement** (Appendix D.2.2). Role-expression classification uses gpt-4.1-mini — a separate judge in the PCA pipeline. Paper does **not** release the 200 human-labeled samples.
 - **Our primary judge:** self-hosted `Qwen/Qwen3.6-27B` dense, thinking OFF. Benchmarks comparable to deepseek-v3, higher than gpt-4.1-mini.

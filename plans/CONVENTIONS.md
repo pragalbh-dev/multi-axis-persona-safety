@@ -72,6 +72,14 @@ Any choice made during stage execution that was NOT in the pre-written stage pla
 - **Why it's mandatory:** downstream experiments build on upstream choices. When a later stage produces a surprising result, the first place to look is `decisions.md` — what was chosen when the plan was ambiguous? Without the log, debugging cascading anomalies becomes guesswork.
 - **Triggers:** picking a concrete value when the plan says "around X" (e.g., argmax-cos_sim extraction layer lands at L30 vs paper's L32), resolving a paper ambiguity not covered in the plan, library-version / implementation choices the plan didn't name, scope cuts under pressure, anything a future agent might want to audit or reverse.
 
+### Jailbreak datasets (locked Stage 0 → Stage 1; every safety eval runs on both)
+
+- **Primary set: DAN / Shen et al. CCS 2024** — `data/eval/dan_jailbreak/sampled_1100.parquet`, 1,100 prompts stratified across 13 OpenAI-policy harm categories (~85 per category). Real in-the-wild persona jailbreaks. Source: HF `TrustAIRLab/in-the-wild-jailbreak-prompts` + GitHub `verazuo/jailbreak_llms`. Pinned commits in `data/eval/dan_jailbreak/manifest.json`.
+- **Secondary set: Shah-style reconstruction** — `data/eval/reconstructed_jailbreak/sampled_1100.parquet`, 1,100 synthetic pairs generated via `src/data/reconstruct_shah_jailbreaks.py` against a Gemma 4 31B attacker. Same 13 OpenAI-policy categories as DAN (interchangeable schema). Original Shah et al. 2311.03348 dataset is not publicly released; this reconstruction follows the paper's methodology with a verified-quality rubric (1-5 scale, drop <3).
+- **Rule:** every safety-eval invocation in Stages 2/3/4/6 runs on BOTH datasets; outputs tag rows with `dataset ∈ {dan, shah_reconstructed}`. Headline metrics report DAN as primary, Shah-reconstructed as cross-dataset replication. Bootstrap CIs computed independently per dataset; cross-dataset deltas reported.
+- **Stratification:** 13 categories shared between sets. Subsampling preserves per-category counts; e.g., 500-prompt stratified subsample = ~38/category from each dataset.
+- **Compute implication:** every Stage 3/4/6 condition that historically targeted "1,100 Shah prompts" now targets 2,200 prompts (1,100 DAN + 1,100 Shah-reconstructed). Compute cuts (full vs subsample at intermediate λ values) apply per-dataset, not jointly. Total Stage 4 attack-eval compute roughly doubles vs the original single-set plan; budget accordingly.
+
 ### Scientific conventions (locked from paper cross-check)
 
 These are derived directly from Lu et al. 2601.10387 via line-by-line check of the extracted paper (`~/obsidian-vault/raw/papers/assistant-axis/extracted.md`). Do not deviate without user sign-off.
