@@ -1,0 +1,35 @@
+# Phase 1 — Baseline expansion config.
+# Extends Plan B baseline coverage to the unused 604 DAN prompts +
+# all 1105 Shah-reconstructed prompts. Same subject + judge + L* + extraction
+# pipeline as Plan B; just more rollouts. Output: extensions/baseline_extended.parquet
+# with schema identical to Plan B details.parquet (plus dataset column).
+
+experiment_id: baseline_extend
+seed: 42
+output_dir: results/plan_b_gemma2_27b/extensions
+
+# ── Subject (same as Plan B) ─────────────────────────────────────────────
+model_id: gemma_2_27b
+dtype: bf16
+tensor_parallel: 4
+
+# ── Datasets ─────────────────────────────────────────────────────────────
+# DAN: skip prompt_ids that are already in Plan B's baseline (496 of 1100).
+# Shah: include all 1105 prompts.
+dan_path: data/eval/dan_jailbreak/sampled_1100.parquet
+shah_path: data/eval/reconstructed_jailbreak/sampled_1105.parquet
+plan_b_baseline_parquet: results/plan_b_gemma2_27b/details.parquet  # to skip already-run DAN ids
+
+# ── Generation ───────────────────────────────────────────────────────────
+baseline_profile: long          # 542 tok/s, max_model_len=8192 — handles long DAN prompts
+max_new_tokens: 256             # match Plan B
+hf_extract_max_input_len: 4096  # match Plan B step 7b
+hf_extract_batch_size: 4        # match Plan B step 7b OOM-safe value
+
+# ── L* + extraction artifacts (reuse Plan B's, do NOT recompute) ─────────
+l_star: 21
+plan_b_extraction_dir: results/plan_b_gemma2_27b/extraction
+
+# ── Judge (same as Plan B) ───────────────────────────────────────────────
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml

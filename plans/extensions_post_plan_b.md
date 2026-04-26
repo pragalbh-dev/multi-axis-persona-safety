@@ -29,6 +29,116 @@ diagnostic outcome.
 
 ---
 
+## Known issues with the current run (to address post-deadline)
+
+The Plan B re-run produced clean headline numbers, but six methodological
+gaps and data-quality concerns surfaced in review. Listed here so they
+don't get lost; each is mapped to which extension (if any) addresses it.
+
+### 1. Coherence loss under PC and random attacks
+- PC2 attack at λ=0.25: **67.2% nonsense** (32.8% coherent).
+- PC3 attack at λ=0.25: **44.0% nonsense** (56.0% coherent).
+- Random attacks at λ=0.25: **100% nonsense** (0% coherent).
+
+**Implication.** The "0% harm under PC attacks" claim is partly attributable
+to the steering perturbation degrading coherence — there is less coherent
+text to be judged — not purely to the cap suppressing harmful information.
+The "behavioural bypass" refusal-rate metric is also inflated by nonsense
+mass on the full denominator (which is why the page reports both raw and
+coherence-adjusted versions).
+
+**Addressed by:** Ext E (coherence-matched random baselines) AND Ext F
+(coherence-matched PC-attack sweep, new — see below). Together these give
+a clean "at matched coherence X%, PC attacks reduce refusal-rate by Y pp;
+random baselines do not" claim that the current data cannot support.
+
+### 2. Within-cap Cohen's d has small harm-positive group
+- AA-cap reduces harm to **n=9 of 500** (1.8% rate is the success of the
+  defence; the side effect is that within-cap Cohen's d on PC2/PC3 separating
+  the 9 harm cases from 491 non-harm uses an unbalanced sample).
+- CI is reported (PC2: [-2.26, -1.11]; PC3: [-1.91, -0.96]) but the
+  underlying n=9 limits how tight it can get, regardless of how many
+  bootstrap resamples we run.
+
+**Implication.** The Cohen's d numbers on the page are large but the CI
+breadth invites a reviewer to discount them. Two options for tightening:
+(a) accept the wide CI honestly and report — current page does this; (b)
+pool capped runs across all four post-deadline subjects (Qwen 3 32B, Gemma 4
+31B ON/OFF) to grow the harm-positive group. If Gemma 2 27B's 1.8% post-cap
+rate is representative, four subjects × 500 prompts ≈ ~36 capped harm
+cases, much tighter CI.
+
+**Addressed by:** option (b) is implicit in Q5 / cross-subject replication.
+Not a standalone extension.
+
+### 3. Cross-judge validation — DONE at 93%
+- GPT-5.5 cross-check ran on a 200-sample stratified subset of
+  `rollouts_all_judged.parquet`. **Binary agreement vs Qwen 3.6-27B primary
+  judge = 93%**, matching the paper's 91.6% deepseek-v3-vs-human bar.
+- `metrics.json::judge_agreement_gpt55_vs_primary` field still shows
+  `null` (write-back wasn't wired during the deadline rush) — should be
+  patched to `0.93` for the page record. Underlying labels live in the
+  GPT-5.5 sample parquet from the validation run.
+
+**Implication.** Judge confidence is established. Every harm number on
+the page rests on a judge that agrees with a strong frontier model 93%
+of the time. The α-track's headline-defensibility question is now
+purely about the EXPERIMENTAL setup (coherence, λ choice, basis), not
+the judge.
+
+**Status:** locked. Do NOT re-run — the budget is spent and the result
+is sufficient. CLAUDE.md "Evaluation" section updated 2026-04-26 to
+reflect this.
+
+### 4. Capping layer range was a paper-fallback, not paper-validated
+- Lu et al. publish capping configs for Qwen 3 32B (layers 46–53, 72–83%
+  depth) and Llama 3.3 70B (56–71, 70–89% depth) but **not for Gemma 2
+  27B**. We chose [33, 38] = 71.7–82.6% depth by proportional matching to
+  Qwen.
+
+**Implication.** This worked (cap defends, coherence preserved), but it's
+methodologically a guess. The headline numbers could shift modestly under
+better-tuned ranges (narrower vs wider, deeper vs shallower).
+
+**Addressed by:** **Ext G — capping-range sensitivity sweep** (~1 hr HF).
+Not high-priority unless Ext A says the harm geometry question dominates.
+
+### 5. τ calibration is per-axis but the n=30 default-Assistant sample is small
+- The current cap uses τ = p25 of the role-positive projection of n=30
+  default-Assistant rollouts at the capping layers. With n=30 the percentile
+  estimate is noisy.
+- For Ext C (multi-axis defence), we'll need analogous τ calibration for
+  PC2 and PC3 in their role-positive directions. Same noise concern, three
+  times over.
+
+**Implication.** Convention should be locked before Ext C: either widen the
+calibration set (resample paper's full 275-vector cache through this
+model's L*=21 forward), or use a more robust statistic (mean ± 1 SD, or
+trimmed mean, instead of p25). Document the choice in CONVENTIONS before
+running Ext C.
+
+**Addressed by:** prerequisite documented in Ext C; not a standalone
+extension.
+
+### 6. PC6 is uninformative; PC1 is redundant — both interesting, neither characterised
+- LASSO selects PC2, 3, 4, 5, 7, 8, 9, 10. Misses **PC1** (expected — it's
+  redundant with AA, which is a separate feature; this is empirical
+  confirmation of the paper's §3.1 claim) and **PC6** (unexpected — what
+  makes PC6 different from its neighbours?).
+
+**Implication.** PC6 not being selected is a small but real signal about
+role-PCA structure that the project hasn't used yet. Could be: (a) PC6
+captures a pure-style axis with no harm correlation, (b) PC6 is the noise
+edge where the role-PCA basis becomes unstable, (c) there's a structural
+reason we haven't identified.
+
+**Addressed by:** falls naturally out of Ext D (behavioural-bypass
+interpretation) if we extend it to project responses onto each PC
+individually and tag what each PC governs. Worth a paragraph in the writeup
+even if no extra experiment is run.
+
+---
+
 ## Ext A — DiffMean `v_harm` diagnostic  *(do FIRST)*
 
 **Goal:** identify what the LASSO is actually detecting. Compute the harm-label
@@ -177,9 +287,113 @@ and PC3 do." That's a stronger and more honest version of the H1 narrative.
 
 ---
 
+## Ext F — Coherence-matched PC-attack λ sweep
+
+**Goal.** Resolve the coherence-attribution ambiguity in the headline. The
+current run uses a single λ=0.25 calibrated on residual norms, but we don't
+know the coherence-vs-bypass Pareto frontier for PC2 and PC3 attacks
+individually. A reviewer's natural question — "is the refusal-rate drop
+just the model degenerating, or a real behavioural shift?" — needs a clean
+answer that the current data cannot give.
+
+**Method.**
+1. Sweep PC2 and PC3 attack λ ∈ {0.05, 0.10, 0.15, 0.20, 0.25} on a
+   100-prompt mini-run (10 conditions × 100 prompts = 1,000 generations).
+2. For each (axis, λ) cell, report: harm rate, coherence (1 − nonsense
+   rate), refusal-keyword rate (raw), refusal-keyword rate (coherent only).
+3. Pick the λ for each axis where coherence ≥ 80% (matching AA-cap's 91%
+   loosely). Run a full 500-prompt condition at that λ.
+4. Compare: at coherence ≥ 80%, does the cap's refusal pattern still
+   collapse under PC2/PC3 steering, or does it survive?
+
+**Cost.** ~3 hr HF (10 mini-conditions × ~12 min + 2 full conditions ×
+~20 min) + judge.
+
+**Predicted outcomes.**
+- *Refusal still collapses at matched coherence* → behavioural bypass is a
+  real finding, robust to coherence accounting. The page's main claim
+  survives stricter scrutiny.
+- *Refusal partially recovers when coherence is preserved* → some of the
+  bypass on the current page is coherence-driven, not bypass-driven. The
+  refined claim narrows: "PC attacks at λ ≥ X push the model into
+  coherence-loss territory faster than into bypass territory." Still
+  publishable but reframed.
+- *Refusal fully recovers at matched coherence* → there is no behavioural
+  bypass at coherence-preserving λ; the apparent bypass at λ=0.25 was
+  pure coherence loss. This would be a null result and would weaken the
+  page's H1 narrative substantially.
+
+**Why it matters more than Ext E.** Ext E fixes the *random baseline* arm
+of the comparison (cosmetic). Ext F fixes the *experimental arm* of the
+comparison (substantive). Of the two, Ext F is the one that can change
+whether the headline finding survives review. Run Ext F first; Ext E
+becomes a follow-up only if Ext F's results are clean.
+
+---
+
+## Ext G — Capping-range sensitivity sweep
+
+**Goal.** Confirm the chosen capping range [33, 38] (71.7–82.6% depth) is
+locally optimal for Gemma 2 27B. The paper publishes capping configs for
+Qwen 3 32B and Llama 3.3 70B; we picked [33, 38] by proportional matching
+to Qwen. This worked, but the sensitivity to layer choice is unmeasured.
+
+**Method.** Mini-run (100 prompts) of AA-cap at four alternative ranges:
+- [34, 36] (narrower, centred)
+- [31, 40] (wider, same centre)
+- [37, 41] (deeper)
+- [29, 34] (shallower)
+
+For each, report harm rate, coherence rate, refusal-keyword rate. Compare
+to the working [33, 38] baseline.
+
+**Cost.** ~1 hr HF (4 conditions × ~12 min) + judge.
+
+**Predicted outcomes.**
+- *All four alternatives produce comparable defence + coherence numbers*
+  → [33, 38] is in a stable plateau; the proportional-matching heuristic
+  was sound. Headline numbers are robust.
+- *One alternative produces meaningfully better numbers (lower harm + ≥90%
+  coherence)* → the headline numbers are conservative; better-tuned cap
+  exists. Re-run the full Plan B with the new range before any further
+  extension. Worth doing.
+- *All alternatives produce coherence collapse* → [33, 38] is the only
+  working window; defence is fragile. Reframe the project around "narrow
+  effective-cap window on Gemma 2 27B."
+
+**Why it matters.** Lower priority than Ext F or Ext A. Run only if Ext A
+confirms the role-PCA basis is the right one (otherwise basis question
+dominates and layer-range tuning is moot).
+
+---
+
 ## Execution order
 
+Two parallel tracks: **(α) headline-defensibility** (does the current page's
+claim survive scrutiny?) and **(β) project-direction** (what should the next
+phase pursue?). Run α-track first — these can change whether the page's
+claim holds. β-track follows.
+
 ```
+α — headline-defensibility (run first; can refute/refine current findings)
+
+   GPT-5.5 cross-judge on existing rollouts (Issue #3, ~30 min, $5-10)
+                              │
+                              ▼
+                Ext F — coherence-matched PC-attack λ sweep
+                       (Issue #1, ~3 hr; substantive)
+                              │
+                              ▼
+                Ext E — coherence-matched random baselines
+                       (Issue #1 cosmetic complement, ~2 hr)
+                              │
+                              ▼
+                Ext G — capping-range sensitivity (Issue #4, ~1 hr;
+                       only if Ext A says role-PCA basis is the right one)
+
+
+β — project-direction (run after α-track confirms findings)
+
                                         Ext A (DiffMean diagnostic)
                                              │
                ┌─────────────────────────────┼─────────────────────────────┐
@@ -199,24 +413,28 @@ and PC3 do." That's a stronger and more honest version of the H1 narrative.
                                         Ext C (multi-axis defence)
                                              │
                                              ▼
-                                Ext D + Ext E in parallel
-                                (analysis-only / small runs)
+                                Ext D (behavioural-bypass interpretation,
+                                       analysis-only)
 ```
 
 ---
 
 ## Total budget estimate
 
-| Stage | Wall-clock | Compute | Notes |
-| --- | --- | --- | --- |
-| Ext A | ~1 hr | none | parquet + safetensors only |
-| Ext B (if triggered) | ~1.5 hr | HF + judge | 3 conditions × 500 prompts |
-| Ext C | ~3-4 hr | HF + judge | 1 new condition + analysis |
-| Ext D | ~2 hr | embedding + manual | Plan B data + sentence-transformers |
-| Ext E | ~2 hr | HF + judge | mini-sweep + 1 full condition |
-| **Total** | **~8-10 hr** if Ext B fires; **~6.5-8.5 hr** if not | | |
+| Stage | Track | Wall-clock | Compute | Notes |
+| --- | --- | --- | --- | --- |
+| GPT-5.5 cross-judge | α | ~30 min | OpenAI API (~$5-10) | judging only, no new generation |
+| Ext F (PC-attack λ sweep) | α | ~3 hr | HF + judge | 10 mini × 100 prompts + 2 full × 500 |
+| Ext E (random-baseline λ sweep) | α | ~2 hr | HF + judge | 4 mini × 100 prompts + 1 full × 500 |
+| Ext G (capping-range sensitivity) | α | ~1 hr | HF + judge | 4 mini × 100 prompts |
+| Ext A (DiffMean diagnostic) | β | ~1 hr | none | parquet + safetensors only |
+| Ext B (causal test, if triggered) | β | ~1.5 hr | HF + judge | 3 conditions × 500 prompts |
+| Ext C (multi-axis defence) | β | ~3-4 hr | HF + judge | 1 new condition + analysis |
+| Ext D (bypass interpretation) | β | ~2 hr | embedding + manual | existing data + sentence-transformers |
+| **Total** | | **~14-16 hr** if everything fires; **~12-14 hr** if Ext B / Ext G skip | | |
 
-A weekend's work, post-deadline.
+Two weekends' work, post-deadline. α-track is ~6.5 hr alone and gates
+whether any β-track effort is worth investing.
 
 ---
 

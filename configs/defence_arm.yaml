@@ -1,0 +1,82 @@
+# Phase 4 — Defence arm config.
+# Multi-axis cap defence × Phase 3 attack interaction matrix.
+#
+# Defence configurations:
+#   D1. AA only (Plan B baseline; for delta comparison)
+#   D2. AA + sign-matched PC2
+#   D3. AA + sign-matched PC2 + PC3 + PC4
+#   D4. AA + v_harm-direct (oracle)
+#
+# Each defence × each Phase 3 attack (from chosen_lambda_per_axis):
+#   - sign-matched PC2 at λ_max_coherent
+#   - sign-matched PC3 at λ_max_coherent
+#   - sign-matched PC4 at λ_max_coherent
+#   - v_harm-direct at λ_max_coherent
+#   - aa_control at λ_max_coherent
+#   - multi-axis composite (sign-matched PC2+PC3+PC4 at composite λ)
+#   - 0 (no attack: pure defence baseline)
+#
+# Conservative strategy: if D3/D4 with all caps at p25 break coherence (per
+# Phase 4 acceptance criterion 3), automatically retry at p10. Driver
+# implements both percentiles and picks the coherence-passing config.
+
+experiment_id: defence_arm
+seed: 42
+output_dir: results/plan_b_gemma2_27b/extensions/defence_arm
+
+# ── Subject ──────────────────────────────────────────────────────────────
+model_id: gemma_2_27b
+dtype: bf16
+tensor_parallel: 4
+
+# ── Axis basis sources (from Phase 2 + Phase 3) ──────────────────────────
+harm_direction_json: results/plan_b_gemma2_27b/extensions/harm_direction_merged.json
+tau_per_axis_json: results/plan_b_gemma2_27b/extensions/tau_per_axis.json
+plan_b_extraction_dir: results/plan_b_gemma2_27b/extraction
+attack_arm_dir: results/plan_b_gemma2_27b/extensions/attack_arm  # holds vectors + chosen_lambda
+
+# ── Phase 3 outputs ──────────────────────────────────────────────────────
+attack_arm_pareto: results/plan_b_gemma2_27b/extensions/attack_arm/lambda_pareto.json
+attack_arm_subset: results/plan_b_gemma2_27b/extensions/attack_arm/rollouts/_attack_subset.parquet
+attack_arm_vectors: results/plan_b_gemma2_27b/extensions/attack_arm/extraction/vectors
+
+# ── Defence configurations ──────────────────────────────────────────────
+# Each entry: name → list of axes to cap (AA always included).
+defence_configs:
+  - name: aa_only
+    extra_axes: []
+    tau_percentile: 25
+  - name: aa_pc2
+    extra_axes: [signmatched_pc2]
+    tau_percentile: 25
+  - name: aa_pc2_pc3_pc4
+    extra_axes: [signmatched_pc2, signmatched_pc3, signmatched_pc4]
+    tau_percentile: 25
+  - name: aa_v_harm
+    extra_axes: [v_harm]
+    tau_percentile: 25
+
+# Conservative fallback: if any defence config breaks coherence on the
+# 0-attack (pure defence) cell, retry that config at p10.
+fallback_tau_percentile: 10
+coherence_floor: 0.80
+
+# ── Attacks to run on top of each defence ───────────────────────────────
+# "all_phase3_attacks" = read chosen_lambda_per_axis from Phase 3 output and
+# include each as an attack condition.
+include_phase3_attacks: true
+include_zero_attack: true   # 0-attack baseline per defence (pure defence)
+include_multi_axis_attack: true
+
+# ── L* + capping range (reuse Plan B) ───────────────────────────────────
+l_star: 21
+capping_layers: [33, 34, 35, 36, 37, 38]
+
+# ── Generation ───────────────────────────────────────────────────────────
+hf_steered_batch_size: 8
+hf_steered_max_input_len: 4096
+max_new_tokens: 256
+
+# ── Judge ────────────────────────────────────────────────────────────────
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml

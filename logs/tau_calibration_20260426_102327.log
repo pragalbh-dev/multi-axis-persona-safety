@@ -1,0 +1,20 @@
+/home/synaptic/data-science/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Computed v_harm at L*=21 from n=2207 baseline rows (243 harm)
+  L33: (8300, 4608)
+  L34: (8300, 4608)
+  L35: (8300, 4608)
+  L36: (8300, 4608)
+  L37: (8300, 4608)
+  L38: (8300, 4608)
+signmatched_pc2: cos(v_harm,PC2)=-0.638 → sign=-1
+signmatched_pc3: cos(v_harm,PC3)=-0.428 → sign=-1
+signmatched_pc4: cos(v_harm,PC4)=+0.323 → sign=+1
+
+→ results/plan_b_gemma2_27b/extensions/tau_per_axis.json
+
+p25 per axis per layer (the cap threshold candidate):
+  signmatched_pc2: {33: 7766.38, 34: 7868.73, 35: 7967.85, 36: 8275.36, 37: 8545.75, 38: 8854.55}
+  signmatched_pc3: {33: 456.36, 34: 458.78, 35: 416.04, 36: 548.95, 37: 591.63, 38: 667.76}
+  signmatched_pc4: {33: -4706.88, 34: -4614.8, 35: -4622.06, 36: -4812.02, 37: -4941.67, 38: -5118.19}
+  v_harm: {33: -4707.09, 34: -4590.72, 35: -4635.62, 36: -4821.17, 37: -4928.12, 38: -5187.84}

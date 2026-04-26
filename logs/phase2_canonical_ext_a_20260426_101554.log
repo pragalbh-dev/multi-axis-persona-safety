@@ -1,0 +1,42 @@
+/home/synaptic/data-science/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Loading Plan B baseline from results/plan_b_gemma2_27b/details.parquet + cache data/cache/activations/gemma_2_27b/plan_b_per_prompt_L21/L21...
+  n=500, harm=74, datasets={'dan'}
+Loading extended baseline from results/plan_b_gemma2_27b/extensions/baseline_extended.parquet + cache data/cache/activations/gemma_2_27b/baseline_extended_L21/L21...
+  n=1707, harm=169, datasets={'dan', 'shah'}
+Merged: n=2207, harm=243, datasets={'dan': 1102, 'shah': 1105}
+════════════════════════════════════════════════════════════════════════
+Ext A — DiffMean v_harm diagnostic (layer L*=21)
+════════════════════════════════════════════════════════════════════════
+Sample: n=2207  (243 harm, 1964 safe)
+     dan: n=1102  harm=162  safe= 940
+    shah: n=1105  harm= 81  safe=1024
+
+||v_harm||_pre  = 1496.5121
+||AA||_pre      = 654.1028
+
+cos_sim(v_harm, AA)        = -0.3556
+cos_sim(v_harm, PC1 )       = -0.3793
+cos_sim(v_harm, PC2 )       = -0.6384  ←
+cos_sim(v_harm, PC3 )       = -0.4280
+cos_sim(v_harm, PC4 )       = +0.3231
+cos_sim(v_harm, PC5 )       = -0.0952
+cos_sim(v_harm, PC6 )       = +0.0334
+cos_sim(v_harm, PC7 )       = +0.1081
+cos_sim(v_harm, PC8 )       = -0.0452
+cos_sim(v_harm, PC9 )       = +0.0520
+cos_sim(v_harm, PC10)       = +0.0023
+
+residual outside role-PCA top-K (fraction of v_harm energy):
+  K= 3  residual = 0.2654
+  K= 5  residual = 0.1519
+  K=10  residual = 0.1344
+
+AUC <h, v_harm>  = 0.8896  [0.8723, 0.9053]
+AUC <h, AA>      = 0.2722  [0.2435, 0.3037]
+
+argmax axis alignment: PC2  (cos = -0.6384)
+════════════════════════════════════════════════════════════════════════
+
+→ JSON: results/plan_b_gemma2_27b/extensions/harm_direction_merged.json
+→ Summary: results/plan_b_gemma2_27b/extensions/harm_direction_merged_summary.md

@@ -39,3 +39,7 @@ Thumbs.db
 # External repos cloned for reference (Stage 0 T0.7)
 external/
 tmp/*
+.gstack/
+
+# Personal application drafts (job/fellowship applications)
+applications/
