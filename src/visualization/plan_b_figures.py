@@ -261,7 +261,8 @@ def render_blind_spot_summary(
                 color="#555",
             )
         plt.suptitle(
-            f"Plan B — blind-spot signal at coherence-safe λ (AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp)",
+            f"Blind-spot signal at coherence-preserving λ "
+            f"(Gemma 2 27B · DAN · AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp)",
             fontsize=12, y=1.02,
         )
     else:
@@ -273,7 +274,7 @@ def render_blind_spot_summary(
         ax.bar(cats, vals, color=colors)
         ax.axhline(0, color="#333", linewidth=0.5)
         ax.set_ylabel("Δ harm-rate vs cap-only (pp)")
-        ax.set_title("Plan B blind-spot summary (Gemma 2 27B)")
+        ax.set_title("Blind-spot summary (Gemma 2 27B)")
     plt.tight_layout()
     png_path = out_dir / "blind_spot_summary.png"
     fig.savefig(png_path, dpi=150, bbox_inches="tight")
@@ -284,11 +285,13 @@ def render_blind_spot_summary(
         fig_p = make_subplots(
             rows=1, cols=2,
             subplot_titles=(
-                "Behavioural bypass — refusal-rate per condition",
-                f"Statistical signal — LASSO AUC (Δ={blind_spot_auc_delta:+.3f} "
-                f"[{blind_spot_ci_low:+.3f}, {blind_spot_ci_high:+.3f}])",
+                "Behavioural bypass: refusal-keyword rate",
+                f"Statistical signal: LASSO AUC<br>"
+                f"<sub>Δ = {blind_spot_auc_delta:+.3f}  "
+                f"[95% BCa CI {blind_spot_ci_low:+.3f}, {blind_spot_ci_high:+.3f}]</sub>",
             ),
-            column_widths=[0.6, 0.4],
+            column_widths=[0.62, 0.38],
+            horizontal_spacing=0.14,
         )
         order = [
             ("baseline", "baseline", "#999999"),
@@ -321,15 +324,32 @@ def render_blind_spot_summary(
         )
         fig_p.update_yaxes(title_text="AUC (binary harm prediction)", range=[0.5, 1.05], row=1, col=2)
         fig_p.update_layout(
-            title=f"Plan B — blind-spot signal at coherence-safe λ "
-                  f"(AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp on Gemma 2 27B, DAN, n=500/condition)",
-            template="plotly_white", margin=dict(t=80, b=60),
+            title=dict(
+                text=(
+                    f"Blind-spot signal at coherence-preserving λ<br>"
+                    f"<sub>Gemma 2 27B · DAN · n=500/condition · "
+                    f"AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp</sub>"
+                ),
+                x=0.02, xanchor="left", y=0.97, yanchor="top",
+                font=dict(size=15),
+            ),
+            template="plotly_white",
+            margin=dict(t=110, b=110, l=70, r=40),
+            height=520,
         )
+        # Lift subplot titles so they don't crash into the main title.
+        for ann in fig_p.layout.annotations:
+            if ann.text in (
+                "Behavioural bypass: refusal-keyword rate",
+            ) or ann.text.startswith("Statistical signal: LASSO AUC"):
+                ann.font = dict(size=12, color="#1a1a1a")
+                ann.y = 1.05
         if selected_pcs:
             fig_p.add_annotation(
-                text=f"selected PCs: {', '.join(selected_pcs)}",
-                x=1.0, y=-0.25, xref="x2 domain", yref="y2 domain",
-                showarrow=False, xanchor="right", font=dict(size=10, color="#555"),
+                text=f"LASSO-selected: {', '.join(selected_pcs)}",
+                x=1.0, y=-0.22, xref="x2 domain", yref="y2 domain",
+                showarrow=False, xanchor="right",
+                font=dict(size=10, color="#555"),
             )
     else:
         cats = ["AA-cap Δ", "+PC2 Δharm", "+PC3 Δharm", "+random Δharm"]
@@ -345,7 +365,7 @@ def render_blind_spot_summary(
             x=0.5, y=1.12, xref="paper", yref="paper", showarrow=False,
         )
         fig_p.update_layout(
-            title="Plan B — blind-spot summary (Gemma 2 27B, DAN)",
+            title="Blind-spot summary (Gemma 2 27B, DAN)",
             yaxis_title="Δ harm-rate vs cap-only (pp)",
             template="plotly_white",
         )
