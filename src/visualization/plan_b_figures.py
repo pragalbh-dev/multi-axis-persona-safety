@@ -194,64 +194,162 @@ def render_blind_spot_summary(
     blind_spot_ci_low: float,
     blind_spot_ci_high: float,
     out_dir: str | Path,
+    refusal_rate_per_condition: dict[str, float] | None = None,
+    auc_aa_only: float | None = None,
+    auc_with_pcs: float | None = None,
+    selected_pcs: list[str] | None = None,
 ) -> tuple[Path, Path]:
-    """Text card + dot plot of the H1 numerical claim."""
+    """Two-panel summary: behavioural-bypass (refusal-rate) + statistical lift (AUC).
+
+    The original "harm-rate recovery" framing breaks at coherence-safe λ where PC
+    attacks bypass the cap's *behaviour* (refusal pattern) without restoring
+    information-level harm. So:
+      Panel 1 — refusal-keyword incidence per condition (the bypass signal).
+      Panel 2 — LASSO AUC: AA only vs AA+PC1..PC10 with CI on delta.
+
+    `refusal_rate_per_condition` keys are condition_ids; values are 0..1.
+    If unprovided, falls back to the legacy harm-rate-recovery bar plot.
+    """
     import matplotlib.pyplot as plt
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
     out_dir = _ensure_dir(out_dir)
+    has_refusal = bool(refusal_rate_per_condition)
 
-    summary = (
-        f"AA-capping reduces harm rate by {aa_cap_delta_pp:.1f} pp.\n"
-        f"+PC2 (λ=+2) recovers {pc2_recovery_pp:.1f} pp.\n"
-        f"+PC3 (λ=+2) recovers {pc3_recovery_pp:.1f} pp.\n"
-        f"5 random baselines (λ=+2) max recovery: {random_recovery_pp_max:.1f} pp.\n\n"
-        f"Per-prompt LASSO blind-spot AUC delta = {blind_spot_auc_delta:.3f} "
-        f"[95% CI {blind_spot_ci_low:.3f}, {blind_spot_ci_high:.3f}]"
-    )
+    # --- matplotlib version (PNG) ---------------------------------------------
+    fig, axes = plt.subplots(1, 2 if has_refusal else 1, figsize=(12, 5) if has_refusal else (8, 5))
+    if has_refusal:
+        ax_ref, ax_auc = axes
+        # Panel 1: refusal rate per condition
+        order = [
+            ("baseline", "baseline", "#999999"),
+            ("aa_capped", "AA-cap", "#55A868"),
+            ("aa_capped_pc2_pos0p25", "+PC2 (λ=0.25)", "#4C72B0"),
+            ("aa_capped_pc3_pos0p25", "+PC3 (λ=0.25)", "#4C72B0"),
+            ("aa_capped_random_0_pos0p25", "+random₀", "#C44E52"),
+            ("aa_capped_random_1_pos0p25", "+random₁", "#C44E52"),
+        ]
+        cats_r = [lbl for k, lbl, _ in order if k in refusal_rate_per_condition]
+        vals_r = [refusal_rate_per_condition[k] * 100 for k, _, _ in order if k in refusal_rate_per_condition]
+        cols_r = [c for k, _, c in order if k in refusal_rate_per_condition]
+        bars = ax_ref.bar(cats_r, vals_r, color=cols_r)
+        ax_ref.set_ylabel("refusal-keyword rate (%)")
+        ax_ref.set_title("Behavioural bypass — refusal-rate per condition")
+        ax_ref.set_ylim(0, 100)
+        for b, v in zip(bars, vals_r):
+            ax_ref.text(b.get_x() + b.get_width() / 2, v + 2, f"{v:.0f}%", ha="center", fontsize=10)
+        ax_ref.tick_params(axis="x", rotation=30)
+        for tick in ax_ref.get_xticklabels():
+            tick.set_horizontalalignment("right")
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.text(0.05, 0.7, summary, fontsize=12, verticalalignment="top", family="monospace")
-    # Dot plot of the recoveries
-    cats = ["AA-cap Δ", "+PC2 recovery", "+PC3 recovery", "+random max"]
-    vals = [aa_cap_delta_pp, pc2_recovery_pp, pc3_recovery_pp, random_recovery_pp_max]
-    colors = ["#55A868", "#4C72B0", "#4C72B0", "#C44E52"]
-    ax.scatter(vals, np.arange(len(vals)) + 0.5, c=colors, s=120, transform=ax.transAxes)
-    for i, (cat, val) in enumerate(zip(cats, vals)):
-        ax.text(0.55, 0.05 + i * 0.05, f"{cat}: {val:+.1f} pp", fontsize=10, transform=ax.transAxes)
-    ax.set_axis_off()
-    ax.set_title("Plan B blind-spot summary (Gemma 2 27B)")
+        # Panel 2: AUC bars + CI
+        ax_auc.bar(["AA only", "AA + PC1..PC10"], [auc_aa_only or 0.0, auc_with_pcs or 0.0],
+                   color=["#999999", "#4C72B0"])
+        ax_auc.set_ylabel("AUC (binary harm prediction)")
+        ax_auc.set_ylim(0.5, 1.0)
+        ax_auc.set_title(
+            f"Statistical signal — LASSO AUC\nΔ={blind_spot_auc_delta:+.3f} "
+            f"[{blind_spot_ci_low:+.3f}, {blind_spot_ci_high:+.3f}]"
+        )
+        for i, v in enumerate([auc_aa_only or 0.0, auc_with_pcs or 0.0]):
+            ax_auc.text(i, v + 0.005, f"{v:.3f}", ha="center", fontsize=11)
+        if selected_pcs:
+            ax_auc.annotate(
+                f"selected PCs: {', '.join(selected_pcs)}",
+                xy=(0.5, -0.18), xycoords="axes fraction", ha="center", fontsize=9,
+                color="#555",
+            )
+        plt.suptitle(
+            f"Plan B — blind-spot signal at coherence-safe λ (AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp)",
+            fontsize=12, y=1.02,
+        )
+    else:
+        ax = axes
+        # legacy fallback
+        cats = ["AA-cap Δ", "+PC2 Δharm", "+PC3 Δharm", "+random Δharm"]
+        vals = [aa_cap_delta_pp, pc2_recovery_pp, pc3_recovery_pp, random_recovery_pp_max]
+        colors = ["#55A868", "#4C72B0", "#4C72B0", "#C44E52"]
+        ax.bar(cats, vals, color=colors)
+        ax.axhline(0, color="#333", linewidth=0.5)
+        ax.set_ylabel("Δ harm-rate vs cap-only (pp)")
+        ax.set_title("Plan B blind-spot summary (Gemma 2 27B)")
     plt.tight_layout()
     png_path = out_dir / "blind_spot_summary.png"
-    fig.savefig(png_path, dpi=150)
+    fig.savefig(png_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    fig_p = go.Figure(
-        data=[
-            go.Bar(
-                x=cats,
-                y=vals,
-                marker_color=colors,
-                hovertemplate="<b>%{x}</b>: %{y:+.1f} pp<extra></extra>",
-            )
+    # --- plotly version (HTML) -------------------------------------------------
+    if has_refusal:
+        fig_p = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=(
+                "Behavioural bypass — refusal-rate per condition",
+                f"Statistical signal — LASSO AUC (Δ={blind_spot_auc_delta:+.3f} "
+                f"[{blind_spot_ci_low:+.3f}, {blind_spot_ci_high:+.3f}])",
+            ),
+            column_widths=[0.6, 0.4],
+        )
+        order = [
+            ("baseline", "baseline", "#999999"),
+            ("aa_capped", "AA-cap", "#55A868"),
+            ("aa_capped_pc2_pos0p25", "+PC2 (λ=0.25)", "#4C72B0"),
+            ("aa_capped_pc3_pos0p25", "+PC3 (λ=0.25)", "#4C72B0"),
+            ("aa_capped_random_0_pos0p25", "+random₀", "#C44E52"),
+            ("aa_capped_random_1_pos0p25", "+random₁", "#C44E52"),
         ]
-    )
-    fig_p.add_annotation(
-        text=(
-            f"LASSO blind-spot AUC delta = {blind_spot_auc_delta:.3f} "
-            f"[95% CI {blind_spot_ci_low:.3f}, {blind_spot_ci_high:.3f}]"
-        ),
-        x=0.5,
-        y=1.12,
-        xref="paper",
-        yref="paper",
-        showarrow=False,
-    )
-    fig_p.update_layout(
-        title="Plan B — blind-spot summary (Gemma 2 27B, DAN)",
-        yaxis_title="harm-rate change (percentage points)",
-        template="plotly_white",
-    )
+        cats_r = [lbl for k, lbl, _ in order if k in refusal_rate_per_condition]
+        vals_r = [refusal_rate_per_condition[k] * 100 for k, _, _ in order if k in refusal_rate_per_condition]
+        cols_r = [c for k, _, c in order if k in refusal_rate_per_condition]
+        fig_p.add_trace(
+            go.Bar(x=cats_r, y=vals_r, marker_color=cols_r,
+                   text=[f"{v:.0f}%" for v in vals_r], textposition="outside",
+                   hovertemplate="<b>%{x}</b>: %{y:.1f}%<extra></extra>",
+                   showlegend=False),
+            row=1, col=1,
+        )
+        fig_p.update_yaxes(title_text="refusal-keyword rate (%)", range=[0, 110], row=1, col=1)
+        fig_p.add_trace(
+            go.Bar(x=["AA only", "AA + PC1..PC10"],
+                   y=[auc_aa_only or 0.0, auc_with_pcs or 0.0],
+                   marker_color=["#999999", "#4C72B0"],
+                   text=[f"{auc_aa_only or 0.0:.3f}", f"{auc_with_pcs or 0.0:.3f}"],
+                   textposition="outside",
+                   hovertemplate="<b>%{x}</b>: AUC=%{y:.3f}<extra></extra>",
+                   showlegend=False),
+            row=1, col=2,
+        )
+        fig_p.update_yaxes(title_text="AUC (binary harm prediction)", range=[0.5, 1.05], row=1, col=2)
+        fig_p.update_layout(
+            title=f"Plan B — blind-spot signal at coherence-safe λ "
+                  f"(AA-cap Δharm = {aa_cap_delta_pp:+.1f} pp on Gemma 2 27B, DAN, n=500/condition)",
+            template="plotly_white", margin=dict(t=80, b=60),
+        )
+        if selected_pcs:
+            fig_p.add_annotation(
+                text=f"selected PCs: {', '.join(selected_pcs)}",
+                x=1.0, y=-0.25, xref="x2 domain", yref="y2 domain",
+                showarrow=False, xanchor="right", font=dict(size=10, color="#555"),
+            )
+    else:
+        cats = ["AA-cap Δ", "+PC2 Δharm", "+PC3 Δharm", "+random Δharm"]
+        vals = [aa_cap_delta_pp, pc2_recovery_pp, pc3_recovery_pp, random_recovery_pp_max]
+        colors = ["#55A868", "#4C72B0", "#4C72B0", "#C44E52"]
+        fig_p = go.Figure(
+            data=[go.Bar(x=cats, y=vals, marker_color=colors,
+                         hovertemplate="<b>%{x}</b>: %{y:+.1f} pp<extra></extra>")]
+        )
+        fig_p.add_annotation(
+            text=(f"LASSO blind-spot AUC delta = {blind_spot_auc_delta:.3f} "
+                  f"[95% CI {blind_spot_ci_low:.3f}, {blind_spot_ci_high:.3f}]"),
+            x=0.5, y=1.12, xref="paper", yref="paper", showarrow=False,
+        )
+        fig_p.update_layout(
+            title="Plan B — blind-spot summary (Gemma 2 27B, DAN)",
+            yaxis_title="Δ harm-rate vs cap-only (pp)",
+            template="plotly_white",
+        )
+
     html_path = out_dir / "blind_spot_summary.html"
     fig_p.write_html(html_path, include_plotlyjs="cdn")
     return png_path, html_path

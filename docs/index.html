@@ -198,12 +198,13 @@
       </figcaption>
     </figure>
 
-    <h2>The blind spot is in the activations</h2>
+    <h2>Where the blind-spot signal lives</h2>
     <figure>
-      <iframe src="figures/blind_spot_summary.html" height="460" loading="lazy" title="Blind-spot LASSO summary"></iframe>
+      <iframe src="figures/blind_spot_summary.html" height="500" loading="lazy" title="Blind-spot signal: behavioural bypass + LASSO AUC"></iframe>
       <figcaption>
-        <span class="figlabel">Figure 3.</span>
-        Logistic LASSO (nested 10-fold CV, binarized harm target) on per-prompt activation projections at L*=21. AUC(AA only)&nbsp;=&nbsp;0.728; AUC(AA + PC1..PC10) = 0.967; <strong>delta&nbsp;=&nbsp;+0.240</strong>, BCa 95% CI [+0.209,&nbsp;+0.273] over 10,000 bootstrap resamples. CI strongly excludes zero. Selected PCs: 2,&nbsp;3,&nbsp;4,&nbsp;5,&nbsp;7,&nbsp;8,&nbsp;9,&nbsp;10 &mdash; eight of ten role-space PCs carry incremental predictive signal for harm beyond what AA captures alone. This is the H1 statement: the AA-capped activation manifold is not closed under orthogonal persona directions, even when the cap successfully suppresses output-level harm.
+        <span class="figlabel">Figure 3.</span> Two complementary views of the blind-spot signal at coherence-safe steering &lambda;.
+        <strong>Left panel — behavioural bypass:</strong> refusal-keyword incidence per condition (regex over an explicit-refusal phrase set). AA-cap alone preserves the Assistant register on 79% of DAN prompts; +PC2 attack collapses it to 18% and +PC3 to 3.6% while keeping the model coherent (PC2: 86% non-degenerate; PC3: 96%). Two random-direction baselines at the same &lambda; collapse refusal to 0% by breaking the model into nonsense fragments &mdash; visually similar at the keyword level but qualitatively different (see &sect;Three&nbsp;bugs below).
+        <strong>Right panel &mdash; statistical lift:</strong> logistic LASSO with nested 10-fold CV on per-prompt activation projections at L*=21, binarized harm target. AUC(AA only)&nbsp;=&nbsp;0.728; AUC(AA + PC1..PC10) = 0.967; <strong>&Delta;&nbsp;=&nbsp;+0.240</strong>, BCa 95% CI [+0.209, +0.273] over 10,000 bootstrap resamples &mdash; CI strongly excludes zero. The LASSO selects PC2, 3, 4, 5, 7, 8, 9, 10 (eight of ten). Together: PC2/PC3 attacks at coherence-safe &lambda; do not extract harmful information (binary harm rate stays at 0%, see Figure&nbsp;1) but they bypass the cap's behavioural signature, and the activation geometry encoding harm at L*=21 is provably richer than what the cap operates on.
       </figcaption>
     </figure>
 
