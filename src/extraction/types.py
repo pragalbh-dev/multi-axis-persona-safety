@@ -29,11 +29,18 @@ DType = Literal["bf16", "fp16", "fp32"]
 
 @dataclass
 class ExtractionConfig:
-    """How to extract — handed to a backend (HF/TL or vLLM)."""
+    """How to extract — handed to a backend (HF or vLLM).
+
+    `hook_point` is only used by the (deferred) vLLM backend for symbolic
+    naming. The HF backend (Stage 2 T2.1) uses `external/assistant-axis::
+    ActivationExtractor` which auto-discovers `model.layers[i]` via
+    `ProbingModel.get_layers()`, so the hook_point string is irrelevant
+    there. Leave empty when calling the HF backend.
+    """
 
     model_id: str
     layers: list[int]
-    hook_point: str  # templated, e.g. "blocks.{L}.hook_resid_post"
+    hook_point: str = ""  # only used by vLLM backend (deferred)
     token_aggregation: TokenAggregation = "mean_response"
     dtype: DType = "bf16"
     batch_size: int = 8

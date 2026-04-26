@@ -12,8 +12,9 @@ Extending the Assistant Axis paper (Lu et al., arXiv 2601.10387) to study the sa
 
 ## Current State
 
-**Active stage:** Stage 2 — Core infrastructure
-**Active task:** T2.0 (start) — transcribe paper's 9-cat judge prompt to `configs/judge_prompt.yaml` + Gemma 2 27B Appendix F capping range. See `plans/stage-2-infrastructure.md` "Execution plan" for the bf16/TP=4 sequence and the 11 resolved decisions (D1–D11).
+**Active stage:** Stage 2 — Core infrastructure (**Plan B mode** — pre-Anthropic-fellowship-deadline April 26 evening)
+**Active task:** T2.0 (start) — transcribe paper's 9-cat judge prompt to `configs/judge_prompt.yaml` + Gemma 2 27B Appendix F capping range. See `plans/stage-2-infrastructure.md` "Execution plan" → "Plan B mode" + the 16 resolved decisions (D1–D16).
+**Plan B run target:** single-subject H1 demonstration on Gemma 2 27B (DAN-only, 500 prompts, 11 conditions, HF for steered + vLLM for unsteered + judge); ≤18 hr budget; replaces the original T2.9 2-hour smoke. Post-deadline replay (April 27 → May 3) restores full volumes + all 4 subjects + Shah-reconstructed + capability eval + ordinal LASSO. SGLang `--forward-hooks` spike scheduled as first task of post-deadline sweep — see `plans/sglang_post_plan_b_spike.md`.
 **Last updated:** 2026-04-25
 
 Stage 1 complete (design-only, runs in parallel with any remaining Stage 0 smoke loads). See `plans/progress.md` "Stage 1 → Stage 2 Handoff" for artifact manifest. Key locked schemas (do not modify without a `decisions.md` entry):

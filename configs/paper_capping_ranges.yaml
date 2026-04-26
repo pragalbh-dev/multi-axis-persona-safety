@@ -39,17 +39,25 @@ llama_3_3_70b:
   status: "deferred — Stage 7 Ext 9 (hardware-gated, needs 4 GPUs)"
 
 gemma_2_27b:
-  # Paper reports Gemma 2 27B in Appendix F; exact [center, width] need manual
-  # transcription from the paper PDF during Stage 2 T2.0 or Stage 4 T4.0 start.
-  # Leaving placeholder + explicit TODO so downstream agents fail loudly rather
-  # than accept a guess.
-  center: null
-  width: null
-  layers: null
-  tau_percentile: 25
+  # CONFIRMED 2026-04-25 via grep of paper extracted.md: paper does NOT publish a
+  # Gemma 2 27B capping range. Appendix F (line 3405) only contains the Qwen 3 32B
+  # Pareto frontier (Figure 26). §5.1.2 (line 691) and Figure 10 (line 712) only
+  # cite Qwen 46-53 and Llama 56-71 explicitly. Gemma 2 27B is used in steering
+  # experiments (Appendix D.2.3) but not in the §5 activation capping evaluations.
+  #
+  # Plan B fallback per directive: center = L* + 6, width = 8, τ = 25th percentile
+  # at the chosen capping layer. L* is determined at runtime by the cos_sim(PC1, AA)
+  # argmax sweep (Plan B Step 2). For Gemma 2 27B with 46 layers, expected L* ≈ 22-24,
+  # so capping range = [L*+2, L*+9] ≈ [24, 33] — middle-to-late depths per paper convention.
+  # The Stage 4 T4.0 2D sweep replaces this with measured optima during the post-deadline
+  # multi-subject sweep.
+  center_offset_from_lstar: 6      # Plan B heuristic: capping center sits 6 layers deeper than L*
+  width: 8                         # paper convention for ~27-32B models (Qwen also used 8)
+  layers: null                     # filled at runtime: [L*+2, L*+9]
+  tau_percentile: 25               # paper line 685 default
   n_layers_total: 46
-  status: "TODO — transcribe from paper Appendix F before Stage 4 T4.0"
-  source: "paper Appendix F (Table — not yet transcribed)"
+  status: "PAPER DID NOT PUBLISH — Plan B uses L*+6 ± 4 heuristic; Stage 4 T4.0 replaces with 2D sweep post-deadline"
+  source: "Plan B directive 2026-04-25 (heuristic); Stage 4 T4.0 (post-deadline 2D sweep)"
 
 # Tier 2 subjects run their own 2D sweep in Stage 4 T4.0.
 gemma_4_31b_thinking_off:

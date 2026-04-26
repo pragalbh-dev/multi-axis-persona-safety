@@ -33,23 +33,113 @@ def logistic_lasso_cv(
     bootstrap_auc: bool = True,
     n_resamples: int = 10_000,
 ) -> LassoFit:
-    """Nested 10-fold CV logistic-LASSO, returning coefs + ROC-AUC + CI.
+    """Nested 10-fold CV logistic-LASSO. Stage 2 T2.7a (Plan B critical path).
 
-    Stage 3 T3.8 deliverable. Stage 1 ships the contract.
+    Inner CV picks the L1 strength via sklearn's LogisticRegressionCV with
+    `penalty='l1', solver='saga', scoring='roc_auc'`. We then aggregate
+    held-out predictions across the 10 outer folds and compute ROC-AUC plus
+    a bootstrap CI on the held-out (y, y_score) pairs.
 
-    Outline (Stage 3):
-    1. Standardize columns of `X`.
-    2. Outer fold = 10. Inner CV = LogisticRegressionCV(penalty='l1',
-       solver='liblinear' or 'saga', Cs=20, scoring='roc_auc').
-    3. For each fold, refit on all-train at the inner-best C; predict
-       held-out.
-    4. Aggregate held-out predictions → ROC-AUC. Bootstrap BCa CI on the
-       held-out scores when `bootstrap_auc=True`.
-    5. Report final coefficient set as the average across folds (or refit-on-all
-       at the median best C; pick one and document in decisions.md if asked).
+    Final coefficients = refit-on-all at the median inner-best C (more stable
+    than averaging fold-specific coefs).
+
+    Args:
+        X: (n_samples, n_features). Should be the per-prompt feature matrix
+           with columns matching `feature_names` exactly.
+        y: (n_samples,) binary {0, 1}.
+        feature_names: list[str] of length n_features (e.g. ["aa", "pc1", ..., "pc10"]).
+        n_folds: outer CV folds (default 10).
+        seed: RNG seed.
+        bootstrap_auc: when True (default), compute BCa CI on held-out AUC.
+        n_resamples: bootstrap resamples (default 10K per CONVENTIONS).
+
+    Returns:
+        LassoFit with `coefs` (refit), `auc` (held-out), `auc_ci` (bootstrap),
+        `selected_features` (nonzero coef names).
     """
-    raise NotImplementedError(
-        "Stage 3 T3.8 implements logistic_lasso_cv. Stage 1 ships the contract."
+    from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.preprocessing import StandardScaler
+
+    X_arr = np.asarray(X, dtype=np.float64)
+    y_arr = np.asarray(y, dtype=np.int64)
+    if X_arr.ndim != 2:
+        raise ValueError(f"X must be 2D; got {X_arr.shape}")
+    if X_arr.shape[1] != len(feature_names):
+        raise ValueError(
+            f"X has {X_arr.shape[1]} cols but feature_names has {len(feature_names)}"
+        )
+    if X_arr.shape[0] != y_arr.size:
+        raise ValueError(f"X.shape[0]={X_arr.shape[0]} but y.size={y_arr.size}")
+
+    if len(np.unique(y_arr)) < 2:
+        # Degenerate; cannot fit. Return zero coefs + AUC=0.5.
+        return LassoFit(
+            coefs={n: 0.0 for n in feature_names},
+            auc=0.5,
+            auc_ci=BootstrapResult(point=0.5, ci_low=0.5, ci_high=0.5, n_resamples=0),
+            selected_features=[],
+            intercept=0.0,
+            cv_alpha=0.0,
+        )
+
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
+    held_out_y: list[int] = []
+    held_out_score: list[float] = []
+    inner_best_Cs: list[float] = []
+
+    for fold_i, (train_idx, test_idx) in enumerate(skf.split(X_arr, y_arr)):
+        scaler = StandardScaler()
+        Xtr = scaler.fit_transform(X_arr[train_idx])
+        Xte = scaler.transform(X_arr[test_idx])
+
+        # Inner CV picks C
+        inner = LogisticRegressionCV(
+            Cs=20,
+            cv=5,
+            penalty="l1",
+            solver="saga",
+            scoring="roc_auc",
+            max_iter=2000,
+            random_state=seed + fold_i,
+        )
+        inner.fit(Xtr, y_arr[train_idx])
+        best_C = float(inner.C_[0])
+        inner_best_Cs.append(best_C)
+        # Score held-out
+        ytest_score = inner.predict_proba(Xte)[:, 1]
+        held_out_y.extend(y_arr[test_idx].tolist())
+        held_out_score.extend(ytest_score.tolist())
+
+    # Final model: refit on all data at median inner-best C
+    median_C = float(np.median(inner_best_Cs))
+    full_scaler = StandardScaler()
+    X_full = full_scaler.fit_transform(X_arr)
+    final = LogisticRegression(
+        C=median_C,
+        penalty="l1",
+        solver="saga",
+        max_iter=4000,
+        random_state=seed,
+    )
+    final.fit(X_full, y_arr)
+    coefs = dict(zip(feature_names, final.coef_[0].tolist()))
+    selected = [n for n, c in coefs.items() if abs(c) > 1e-8]
+
+    auc_res = auc_with_ci(
+        np.asarray(held_out_y, dtype=np.int64),
+        np.asarray(held_out_score, dtype=np.float64),
+        seed=seed,
+        n_resamples=n_resamples if bootstrap_auc else 1,
+    )
+
+    return LassoFit(
+        coefs=coefs,
+        auc=auc_res.point,
+        auc_ci=auc_res,
+        selected_features=selected,
+        intercept=float(final.intercept_[0]),
+        cv_alpha=median_C,
     )
 
 
@@ -61,16 +151,17 @@ def ordinal_lasso_cv(
     n_folds: int = 10,
     seed: int = 42,
 ) -> LassoFit:
-    """Cumulative-link ordinal LASSO on 3-level y.
+    """Cumulative-link ordinal LASSO on 3-level y. **POST-PLAN B (T2.7b).**
 
     `y` levels (per CONVENTIONS line 99): 0 = refusal-family, 1 =
     partial-info-family, 2 = full-info-family. Drop nonsensical /
     out_of_context / other before calling this.
 
-    Stage 3 T3.8 deliverable.
+    Stage 3 T3.8 secondary robustness check; not invoked by Plan B.
     """
     raise NotImplementedError(
-        "Stage 3 T3.8 implements ordinal_lasso_cv. Stage 1 ships the contract."
+        "T2.7b (post-Plan B). Implementation deferred per plans/decisions.md "
+        "2026-04-25 22:15."
     )
 
 
