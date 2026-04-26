@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Multi-Axis Persona Safety — Plan B Demonstration</title>
-  <meta name="description" content="Single-subject H1 evidence that PC1-only activation defenses have measurable blind spots. Gemma 2 27B, DAN, n=500." />
+  <title>Multi-Axis Persona Safety — Gemma 2 27B blind-spot demonstration</title>
+  <meta name="description" content="Replicating Lu et al.'s Assistant-Axis activation cap on Gemma 2 27B and asking whether the residual stream still encodes harm-relevant signal in directions the cap ignores. Single-subject experiment, DAN persona-jailbreaks, n=500." />
   <style>
     :root {
       --fg: #1a1a1a;
@@ -160,24 +160,39 @@
 <body>
   <main>
     <h1>Multi-Axis Persona Safety</h1>
-    <p class="subtitle">Activation capping defends Gemma 2 27B against persona jailbreaks &mdash; but the residual stream still encodes a measurable harm signal in directions the defense ignores.</p>
+    <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on Gemma&nbsp;2&nbsp;27B &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores.</p>
 
     <p class="meta">
-      Plan B single-subject H1 demonstration &middot; Gemma 2 27B &middot; DAN jailbreaks (n=500) &middot;
+      Single-subject experiment &middot; Gemma&nbsp;2&nbsp;27B &middot; DAN persona-jailbreak prompts (n=500 per condition) &middot;
       <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
     </p>
 
+    <h2>Why this work</h2>
+    <p>
+      Lu et&nbsp;al. (<a href="https://arxiv.org/abs/2601.10387">arXiv 2601.10387</a>, <em>The Assistant Axis</em>) propose a single-direction activation-level defense for persona jailbreaks. They identify a direction in the residual stream &mdash; the Assistant Axis (AA), &approx;&nbsp;PC1 of a 275-role activation PCA &mdash; and show that capping the projection of activations along AA reduces harmful-information extraction across multiple frontier open-weight models.
+    </p>
+    <p>
+      The open question this work asks: <strong>does the residual stream under jailbreak still encode harm-relevant information in directions orthogonal to AA?</strong> If yes, the single-axis cap has a structural blind spot &mdash; it can be defeated by an adaptive adversary steering along the orthogonal directions, and a defense that closes the blind spot would need to be multi-dimensional. If no, the linear-safety hypothesis holds in this setting and PC1/AA is sufficient.
+    </p>
+
+    <h2>Pipeline validation</h2>
+    <p>Before reporting findings beyond the paper, four checks confirm this is a faithful instance of Lu et&nbsp;al.'s methodology:</p>
+    <ul>
+      <li><strong>PC1 &approx; AA replicates.</strong> <code>cos_sim(PC1, AA)</code> at the extraction layer L*=21 is <strong>0.88</strong>; paper's threshold for the cross-model PC1/AA validation is 0.71 (Appendix line ~96). PC1 is fit on the paper's own released 275-role vector cache; AA is computed from this run's 30 rollouts &times; 280 roles using the contrast-vector recipe (<code>mean(default_assistant) &minus; mean(role_playing)</code>) per paper &sect;3.1.</li>
+      <li><strong>The cap defense replicates direction.</strong> AA capping drops binary harm rate from <strong>14.8% &rarr; 1.8%</strong> on n=500 DAN prompts on Gemma&nbsp;2&nbsp;27B &mdash; a model the paper does not publish a capping configuration for, but for which the direction of effect matches the published Qwen&nbsp;3&nbsp;32B and Llama&nbsp;3.3&nbsp;70B reductions in &sect;5.</li>
+      <li><strong>Coherence is preserved.</strong> 91% of capped responses are intelligible (8.6% judged <code>nonsensical</code>; baseline is 0.2%). The cap is operating in-distribution rather than destroying the model.</li>
+      <li><strong>Harm-judge protocol matches the paper verbatim.</strong> Nine-category prompt from Appendix D.2.2; binarization rule (<code>enough_info &cup; enough_info_and_follow_perfectly &rarr; harm=1</code>) per the paper. Judge model is Qwen&nbsp;3.6&nbsp;27B (in place of paper's <code>deepseek-v3</code> per project budget; cross-judge validation is part of the next phase).</li>
+    </ul>
+
+    <h2>What this run found</h2>
     <div class="tldr">
-      <strong>TL;DR.</strong>
-      Assistant-Axis (AA) activation capping &mdash; the defense from
-      Lu et&nbsp;al. (<a href="https://arxiv.org/abs/2601.10387">arXiv 2601.10387</a>) &mdash;
-      reduces persona-jailbreak harm on Gemma 2 27B from
-      <strong>14.8% to 1.8%</strong> (&Delta;&nbsp;=&nbsp;<strong>13.0&nbsp;pp</strong>) on DAN.
-      But a per-prompt logistic LASSO over the top-10 role-space PCs lifts harm-prediction AUC from <strong>0.728</strong> (AA alone) to <strong>0.967</strong>
-      (delta&nbsp;=&nbsp;<strong>+0.240</strong>, 95%&nbsp;BCa&nbsp;CI [+0.209,&nbsp;+0.273]). Eight of the top-10 role-PCs are selected by the LASSO, with within-capped Cohen's&nbsp;d on PC2 = <strong>&minus;1.68</strong> [&minus;2.26, &minus;1.11] and PC3 = <strong>&minus;1.39</strong> [&minus;1.91, &minus;0.96]. The cap is highly effective; the activation geometry it ignores is not silent.
-    </div>
-    <div class="tldr" style="border-left-color: var(--accent-warn);">
-      <strong>Behavioural bypass.</strong> At a coherence-preserving steering magnitude (&lambda;=0.25, calibrated on Gemma 2 27B's residual norm), PC2 and PC3 attacks <em>do not</em> extract harmful information &mdash; harm rate stays at 0% &mdash; but they do collapse the cap's refusal pattern: refusal-keyword incidence drops from <strong>79%</strong> (cap alone) to <strong>18%</strong> (+PC2) and <strong>4%</strong> (+PC3) without breaking model coherence. Two random-direction baselines at the same &lambda; produce only nonsensical fragments. The cap suppresses information; orthogonal PC directions still rewrite the model's voice.
+      Three findings, in order of how strongly they survive scrutiny:
+      <ol style="margin: 12px 0 0; padding-left: 22px;">
+        <li><strong>The defense replicates.</strong> AA-capping drops binary harm rate from 14.8% to 1.8% on n=500 DAN prompts (BCa 95% CI on the difference excludes zero). The cap works as Lu et&nbsp;al. describe, on a model they did not publish numbers for.</li>
+        <li><strong>The activations encode a harm signal in directions orthogonal to AA.</strong> A logistic LASSO over <code>{AA, PC1..PC10}</code> at L*=21 lifts harm-prediction AUC from <strong>0.728</strong> (AA alone) to <strong>0.967</strong> (&Delta;&nbsp;=&nbsp;<strong>+0.240</strong>, BCa 95% CI [+0.209,&nbsp;+0.273], excludes zero). Eight of the top-ten role-PCs are selected: PC2, 3, 4, 5, 7, 8, 9, 10. PC1 is <em>not</em> selected &mdash; direct empirical confirmation of the paper's PC1&nbsp;&approx;&nbsp;AA claim, since AA is already a separate feature in this regression.</li>
+        <li><strong>PC2/PC3 attacks at a coherence-preserving steering magnitude do not extract harmful information &mdash; but they collapse the cap's refusal pattern.</strong> At &lambda;=0.25 (calibrated on Gemma&nbsp;2&nbsp;27B residual norms), neither PC2 nor PC3 attack produces any judged-harmful response. But refusal-keyword incidence under cap drops from <strong>79%</strong> (cap alone) to <strong>18%</strong> (+PC2) and <strong>4%</strong> (+PC3) on the full sample &mdash; or <strong>86% &rarr; 55% &rarr; 6%</strong> when adjusted for coherence loss under steering.</li>
+      </ol>
+      <p style="margin: 14px 0 0;">The refined claim: at the coherence-preserving attack magnitudes tested here, the cap's <em>binary harm</em> defense holds, but the cap's <em>behavioural signature</em> &mdash; its Assistant-style refusal voice &mdash; does not. The activation manifold under cap still encodes a measurable harm signal that AA-only capping does not access.</p>
     </div>
 
     <h2>The defense and what it leaves behind</h2>
@@ -185,26 +200,49 @@
       <iframe src="figures/harm_rate_per_condition.html" height="520" loading="lazy" title="Harm rate per condition"></iframe>
       <figcaption>
         <span class="figlabel">Figure 1.</span>
-        Harm rate (binarized to <code>enough_info</code> &cup; <code>enough_info_and_follow_perfectly</code>; DAN, n=500 per condition) across six conditions: unsteered baseline (14.8%), AA-capped at layers&nbsp;[33,&nbsp;38] with &tau;=p25 of the role-positive distribution (1.8%), AA-cap composed with PC2/PC3 steering at &lambda;=0.25 (0%), and AA-cap composed with two random-direction baselines at &lambda;=0.25 (0%). Error bars are BCa 95% CI (10,000 resamples). The cap suppresses harmful-information extraction at every steering condition tested; the H1 signal is statistical, in the activations, not in the binary harm rate (see Figure&nbsp;3).
+        Binarized harm rate (<code>enough_info &cup; enough_info_and_follow_perfectly</code>; DAN, n=500 per condition) across six conditions: unsteered baseline (14.8%), AA-capped at layers&nbsp;[33,&nbsp;38] with &tau; calibrated to the role-positive p25 (1.8%), AA-cap composed with PC2/PC3 steering at &lambda;=0.25 (0%), and AA-cap composed with two random-direction baselines at &lambda;=0.25 (0%). Error bars are BCa 95% CI (10,000 resamples).
+        <strong>Per-condition coherence</strong> (judged <code>nonsensical</code> rate, complementary to intelligible-response rate): baseline 0.2%, AA-cap 8.6%, +PC2 attack 67.2%, +PC3 attack 44.0%, random&times;2 attacks 100%. The 0% harm rate under PC attacks therefore reflects two compounded effects: (a) the cap suppresses harmful information across the coherent fraction <em>and</em> (b) the steering perturbation degrades coherence so there is less coherent text to be judged. Random-direction attacks at &lambda;=0.25 collapse model coherence entirely &mdash; the random-vs-PC contrast at this &lambda; is degenerate; a coherence-matched random-direction sweep at lower &lambda; is in the next-phase plan.
       </figcaption>
     </figure>
+
+    <h2>Behavioural bypass: refusal-style erasure under PC attack</h2>
+    <p>
+      Under AA-cap alone, the model refuses jailbreak prompts in an explicit Assistant register &mdash; "I cannot", "I'm sorry", "not appropriate", and similar phrases (a fixed regex of explicit-refusal patterns). Under PC2 and PC3 attacks at the same &lambda; that left random attacks producing only nonsense, the explicit refusal register collapses while the model remains coherent.
+    </p>
+    <div class="claim-card">
+      <table>
+        <thead>
+          <tr><td style="font-weight:600; color:var(--fg);">Condition</td><td style="font-weight:600; color:var(--fg); text-align:right;">Refusal-kw (full)</td><td style="font-weight:600; color:var(--fg); text-align:right;">Refusal-kw (coherent only)</td><td style="font-weight:600; color:var(--fg); text-align:right;">Coherence</td></tr>
+        </thead>
+        <tbody>
+          <tr><td>baseline</td><td>41.4%</td><td>41.5%</td><td>99.8%</td></tr>
+          <tr><td>AA-cap</td><td>79.0%</td><td>86.4%</td><td>91.4%</td></tr>
+          <tr><td>AA-cap + PC2 (&lambda;=0.25)</td><td>18.0%</td><td>54.9%</td><td>32.8%</td></tr>
+          <tr><td>AA-cap + PC3 (&lambda;=0.25)</td><td>3.6%</td><td>6.4%</td><td>56.0%</td></tr>
+          <tr><td>AA-cap + random (&lambda;=0.25)</td><td>0.0%</td><td>&mdash;</td><td>0.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The bypass is real, especially under PC3, but is <em>partly</em> attributable to coherence loss: when 67% of PC2-attack responses are nonsense, the raw refusal-keyword rate must drop. The coherence-adjusted column controls for this. Even so, PC3 stands out: <strong>56% of the model's responses remain coherent under attack, but only ~6% of those coherent responses use explicit refusal phrasing.</strong> Inspection of the coherent non-refusal non-harmful PC3 responses shows them clustering as evasive deflections and partial-information replies rather than off-topic noise &mdash; suggesting PC3 governs something like commitment-to-refusal-as-a-stance rather than topical coherence. Mechanistic interpretation of PC3 is in the next-phase plan.
+    </p>
 
     <h2>Why look past PC1</h2>
     <figure>
       <iframe src="figures/scree_plot.html" height="460" loading="lazy" title="Role-space PCA scree plot"></iframe>
       <figcaption>
         <span class="figlabel">Figure 2.</span>
-        Eigenspectrum of the role-space PCA at L*=21 on Gemma 2 27B (fit on Lu et&nbsp;al.'s released 275-role vector cache). Marchenko-Pastur threshold marks where signal stops being distinguishable from noise under iid assumptions. PCs 2&hellip;k above the threshold carry persona-relevant variance the AA defense ignores by construction; cos&nbsp;sim(PC1, AA)=0.88 confirms PC1&nbsp;&approx;&nbsp;AA at the extraction layer.
+        Eigenspectrum of the role-vector PCA at L*=21 on Gemma&nbsp;2&nbsp;27B (fit on Lu et&nbsp;al.'s released 275-role vector cache). The Marchenko-Pastur threshold marks the noise floor under iid assumptions. Multiple PCs above the threshold carry persona-relevant variance the AA-only cap ignores by construction; <code>cos_sim(PC1, AA)&nbsp;=&nbsp;0.88</code> at this layer, so PC1 is functionally redundant with AA &mdash; and indeed the LASSO does not select PC1 as a feature beyond AA. The blind-spot question is whether <em>any</em> of PC2..PC10 carry incremental harm-relevant information; the per-prompt result in Figure&nbsp;3 says yes.
       </figcaption>
     </figure>
 
-    <h2>Where the blind-spot signal lives</h2>
+    <h2>Per-prompt blind-spot signal</h2>
     <figure>
       <iframe src="figures/blind_spot_summary.html" height="500" loading="lazy" title="Blind-spot signal: behavioural bypass + LASSO AUC"></iframe>
       <figcaption>
-        <span class="figlabel">Figure 3.</span> Two complementary views of the blind-spot signal at coherence-safe steering &lambda;.
-        <strong>Left panel — behavioural bypass:</strong> refusal-keyword incidence per condition (regex over an explicit-refusal phrase set). AA-cap alone preserves the Assistant register on 79% of DAN prompts; +PC2 attack collapses it to 18% and +PC3 to 3.6% while keeping the model coherent (PC2: 86% non-degenerate; PC3: 96%). Two random-direction baselines at the same &lambda; collapse refusal to 0% by breaking the model into nonsense fragments &mdash; visually similar at the keyword level but qualitatively different (see &sect;Three&nbsp;bugs below).
-        <strong>Right panel &mdash; statistical lift:</strong> logistic LASSO with nested 10-fold CV on per-prompt activation projections at L*=21, binarized harm target. AUC(AA only)&nbsp;=&nbsp;0.728; AUC(AA + PC1..PC10) = 0.967; <strong>&Delta;&nbsp;=&nbsp;+0.240</strong>, BCa 95% CI [+0.209, +0.273] over 10,000 bootstrap resamples &mdash; CI strongly excludes zero. The LASSO selects PC2, 3, 4, 5, 7, 8, 9, 10 (eight of ten). Together: PC2/PC3 attacks at coherence-safe &lambda; do not extract harmful information (binary harm rate stays at 0%, see Figure&nbsp;1) but they bypass the cap's behavioural signature, and the activation geometry encoding harm at L*=21 is provably richer than what the cap operates on.
+        <span class="figlabel">Figure 3.</span> Two complementary views of the activation-level blind-spot signal.
+        <strong>Left panel:</strong> per-condition refusal-keyword incidence (the same numbers as the table above). <strong>Right panel:</strong> nested 10-fold cross-validated logistic LASSO on per-prompt activation projections at L*=21 with binary harm target. AUC(AA only) = 0.728; AUC(<code>AA + PC1..PC10</code>) = 0.967; <strong>&Delta;&nbsp;=&nbsp;+0.240</strong>, BCa 95% CI [+0.209,&nbsp;+0.273] over 10,000 bootstrap resamples (CI strongly excludes zero). Selected PCs: PC2, 3, 4, 5, 7, 8, 9, 10 &mdash; PC1 and PC6 are not selected.
+        <em>Caveat &mdash; predictive vs causal:</em> the LASSO finding is predictive: the orthogonal PCs carry information that <em>correlates</em> with harm, not necessarily that <em>causes</em> harm. Establishing causal influence requires intervening &mdash; steering along the data-derived harm direction on clean prompts and checking whether harm rate increases. That experiment, alongside the question of whether the harm direction is genuinely orthogonal to AA or is AA in disguise, is the first item in the next-phase plan.
       </figcaption>
     </figure>
 
@@ -221,57 +259,81 @@
         <tr><td>AUC(AA + PC1..PC10) for harm prediction</td><td>0.967</td></tr>
         <tr><td>Per-prompt LASSO blind-spot AUC delta</td><td><strong>+0.240</strong></td></tr>
         <tr><td>BCa 95% CI on AUC delta (10K resamples)</td><td>[+0.209, +0.273]</td></tr>
-        <tr><td>PCs selected by the LASSO</td><td>PC2, PC3, PC4, PC5, PC7, PC8, PC9, PC10</td></tr>
+        <tr><td>PCs selected by the LASSO</td><td>PC2, 3, 4, 5, 7, 8, 9, 10</td></tr>
         <tr><td>Within-cap Cohen's d on PC2 (harm vs safe)</td><td>&minus;1.68 [&minus;2.26, &minus;1.11]</td></tr>
         <tr><td>Within-cap Cohen's d on PC3 (harm vs safe)</td><td>&minus;1.39 [&minus;1.91, &minus;0.96]</td></tr>
         <tr><td>cos_sim(PC1, AA) at L*=21</td><td>0.88</td></tr>
-        <tr><td>Refusal-keyword incidence (cap alone)</td><td>79.0%</td></tr>
-        <tr><td>Refusal-keyword incidence (cap + PC2 attack)</td><td>18.0%</td></tr>
-        <tr><td>Refusal-keyword incidence (cap + PC3 attack)</td><td>3.6%</td></tr>
+        <tr><td>Coherence (intelligible-response rate) &mdash; baseline / cap / +PC2 / +PC3 / random</td><td>99.8% / 91.4% / 32.8% / 56.0% / 0.0%</td></tr>
+        <tr><td>Refusal-keyword incidence, full sample &mdash; baseline / cap / +PC2 / +PC3</td><td>41.4% / 79.0% / 18.0% / 3.6%</td></tr>
+        <tr><td>Refusal-keyword incidence, coherent only &mdash; baseline / cap / +PC2 / +PC3</td><td>41.5% / 86.4% / 54.9% / 6.4%</td></tr>
+        <tr><td>Judge-label refusal+r&amp;j rate &mdash; baseline / cap / +PC2 / +PC3</td><td>34.6% / 70.8% / 28.8% / 10.6%</td></tr>
       </table>
     </div>
 
-    <h2>What Plan B is &mdash; and isn't</h2>
-    <p>
-      Plan B is a single-subject MVP: Gemma 2 27B only, DAN only, five conditions (baseline + AA-cap + PC2/PC3 attacks + 2 random-direction baselines), no capability evaluation. Its job is to land an honest, falsifiable result at experiment-grade volumes (n=500/condition, BCa CI, judge labels) before the fellowship deadline.
-    </p>
-    <p>
-      The interim story is mixed and worth being precise about: <strong>the cap defense works</strong> &mdash; AA capping at proportionally-correct depth (layers 33&ndash;38, matching the paper's Qwen-3-32B 72&ndash;83% depth convention) drops binary harm from 14.8% to 1.8%. But the activations carry a strong predictive signal for harm <em>orthogonal to AA</em> (LASSO AUC lift +0.240, eight of ten role-PCs selected). And at coherence-preserving steering magnitudes, PC2/PC3 attacks bypass the cap's <em>refusal pattern</em> (79%&nbsp;&rarr;&nbsp;18% / 4%) without restoring harmful information. Random-direction attacks at the same magnitude collapse the model into nonsense. The blind spot is real in the geometry; whether it is exploitable at <em>any</em> attack magnitude that keeps the model coherent is what the next experiments need to answer.
-    </p>
-    <p>
-      Roadmap over the next four weeks:
-    </p>
+    <h2>Limitations</h2>
     <ul>
-      <li><strong>Causal attack sweep.</strong> Map the &lambda; &times; layer envelope where PC2/PC3 attacks remain coherent and cross the harm threshold &mdash; the question this run leaves open. Prediction: a narrower coherent-attack window on Gemma 2 27B than the paper's Qwen results suggest, due to Gemma's larger residual norm at L*=21 (24,440).</li>
-      <li><strong>Subject coverage.</strong> Qwen 3 32B and Gemma 4 31B (thinking ON / OFF) &mdash; cross-architecture, cross-generation, cross-reasoning-mode PC1 stability across six pairs.</li>
-      <li><strong>Dataset coverage.</strong> Shah-reconstructed jailbreaks (synthetic pairs) as a cross-dataset replication check; report tagged by <code>dataset &isin; {dan, shah_reconstructed}</code>.</li>
-      <li><strong>H2 multi-axis defense.</strong> Cap AA + PC2 + PC3 jointly; measure whether closing the geometric blind spot also closes the behavioural-bypass observed here.</li>
-      <li><strong>Capability cost.</strong> IFEval, MMLU-Pro, GSM8k, EQ-Bench under each cap configuration &mdash; harm-vs-capability Pareto frontier.</li>
-      <li><strong>Statistical rigor.</strong> Ordinal logistic LASSO on the 9-category judge labels (paper Appendix D.2.2), per-PC FDR (BH q=0.05), Cohen's d on projection differences (PC2: &minus;1.68 within-capped already in this run).</li>
-      <li><strong>Engine work.</strong> SGLang <code>--forward-hooks</code> spike to remove the HF/vLLM backend split that Plan B ships with.</li>
+      <li><strong>n = 1 model.</strong> Findings are on Gemma&nbsp;2&nbsp;27B only. Cross-architecture replication on Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B (thinking ON / OFF) is the next phase &mdash; the cross-model PC1/AA stability claim in the paper rests on multiple subjects.</li>
+      <li><strong>One attack distribution.</strong> DAN persona-jailbreak prompts only. Cross-dataset replication on Shah-reconstructed synthetic jailbreaks (Shah et&nbsp;al. 2311.03348 methodology) is the next phase.</li>
+      <li><strong>No capability evaluation.</strong> The defense is measured on harm only; the harm-vs-capability Pareto frontier (IFEval, MMLU-Pro, GSM8k, EQ-Bench) is not reported here.</li>
+      <li><strong>Random-direction baselines at &lambda;=0.25 collapse model coherence.</strong> The PC-vs-random contrast at this &lambda; is therefore degenerate; the cleanest version of the random-baseline claim requires a coherence-matched random-direction sweep at lower &lambda;, which is the next experiment in this thread.</li>
+      <li><strong>The LASSO finding is predictive, not causal.</strong> A direction that <em>predicts</em> harm in baseline activations is not necessarily a direction whose <em>cap</em> would defend in deployment, nor whose <em>steering</em> would attack. Causal validation is a separate experiment (the first item in the next-phase plan).</li>
+      <li><strong>Within-cap Cohen's d.</strong> Only n=9 of the 500 capped responses are judged <code>enough_info</code>, which gives the within-cap harm vs safe Cohen's d a small positive group. The CI is reported but the underlying group size limits how tight the bound can be made.</li>
+      <li><strong>Cross-judge agreement.</strong> Primary judge (Qwen&nbsp;3.6&nbsp;27B) is not yet validated against the paper's frontier-judge benchmark on this model's outputs (paper reports 91.6% binary agreement against human labels for <code>deepseek-v3</code>; we plan a 200-sample GPT-5.5 cross-check on a subsequent run).</li>
     </ul>
 
-    <h2>Three bugs found and fixed during this run</h2>
-    <p>Plan B's first attempt produced 100% degenerate token-loop outputs across every capped condition (<code>"th'th, the last, the last…"</code>). Three stacked bugs in the cap pipeline, all corrected before this report's numbers:</p>
+    <h2>Research questions for the next phase</h2>
+    <p>The findings above raise five testable questions. Cheap diagnostics first; expensive runs only after a diagnostic justifies them. Each question states the approach and what the answer would mean.</p>
     <ol>
-      <li><strong>Sign convention.</strong> Lu et&nbsp;al.'s upstream <code>_apply_cap</code> is a ceiling on a <em>role-positive</em> direction; our locally computed AA was <em>Assistant-positive</em> (cos&nbsp;sim with their published Qwen capping vector = &minus;1.0000). Composing them pushed Assistant activations <em>away</em> from Assistant &mdash; anti-defense. <em>Fix:</em> negate cap vectors inside <code>from_config</code>.</li>
-      <li><strong>Tau calibration.</strong> Tau was the 25th percentile of role-rollout projections on +AA, but the cap operator (after the sign flip) reads &lt;h, &minus;AA&gt;, so the comparison sign was wrong: cap never fired. <em>Fix:</em> &tau;_role&nbsp;=&nbsp;&minus;p75 of the existing +AA calibration (mathematically equivalent to p25 in the role-positive distribution).</li>
-      <li><strong>Capping at the wrong depth.</strong> The original fallback (offset L*+6, width 8) sat at 50&ndash;65% depth on a model the paper never published a cap range for. The paper's Qwen and Llama caps both sit at 70&ndash;83% depth. <em>Fix:</em> relocate to layers [33,&nbsp;38] at 71.7&ndash;82.6% depth, proportionally matching Qwen.</li>
+      <li>
+        <strong>Is the harm signal AA-aligned, or genuinely orthogonal to AA?</strong>
+        <em>Approach.</em> Compute <code>v_harm = mean(harm_activations) &minus; mean(safe_activations)</code> from the existing baseline activations &mdash; the same difference-of-means recipe Lu et&nbsp;al. use to compute AA, but with harm/safe labels instead of Assistant/role labels &mdash; and measure <code>cos_sim(v_harm, AA)</code>.
+        <em>Discriminating outcome.</em> If <code>cos_sim &gt; 0.9</code>, the LASSO is detecting AA in disguise and the blind-spot framing weakens substantially. If <code>cos_sim &isin; [0.5, 0.85]</code>, a meaningfully novel harm direction exists alongside AA, and Q2 is justified.
+      </li>
+      <li>
+        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong>
+        <em>Approach.</em> Steer along <code>v_harm</code> (from Q1) on clean prompts (no DAN, no cap) at &lambda;&nbsp;&isin;&nbsp;{0.1, 0.25, 0.5}. Re-judge.
+        <em>Discriminating outcome.</em> If harm rate climbs with &lambda; (excluding baseline 14.8% with CI clear), <code>v_harm</code> is causal &mdash; and a multi-axis defense capping it is justified. If harm rate is flat, the LASSO is detecting co-occurring features (style, topic, response length) that correlate with harm but don't cause it &mdash; itself a publishable finding that reframes the project as "harm is linearly correlated but not multi-axis-causal at this depth."
+      </li>
+      <li>
+        <strong>Does capping AA + PC2 + PC3 jointly close the orthogonal signal?</strong>
+        <em>Approach.</em> Add a multi-axis-cap condition (existing <code>multi_axis_cap</code> machinery in the codebase). Re-fit the LASSO on multi-axis-capped activations; check whether the AUC delta shrinks toward zero.
+        <em>Discriminating outcome.</em> If &Delta; shrinks substantially &rarr; multi-axis defense closes the blind spot in miniature; the H1+H2 defensive story is intact. If unchanged &rarr; the residual signal lives in PC4&ndash;PC10 (which the LASSO did select), and a 3-axis defense is insufficient; the right basis is harm-PCA derived from baseline data, not role-PCA.
+      </li>
+      <li>
+        <strong>What does PC2/PC3 actually do to model voice when it preserves coherence?</strong>
+        <em>Approach.</em> Filter PC2/PC3 attack rollouts to coherent + non-refusal + non-harmful responses. Hand-tag a sample, then compute embedding similarity to (a) baseline refusals, (b) baseline complies, (c) generic off-topic content.
+        <em>Discriminating outcome.</em> If PC3-attack responses cluster as evasive deflections / hedged partial-info rather than off-topic noise, PC3 has a clean semantic interpretation &mdash; "commitment-to-refusal-as-a-stance" or similar &mdash; that connects directly to recent persona-vectors interpretability work. Mechanism beats black-box.
+      </li>
+      <li>
+        <strong>Does the blind-spot signal replicate cross-architecture and cross-dataset?</strong>
+        <em>Approach.</em> Extend the same protocol to Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B (thinking ON / OFF) on DAN + Shah-reconstructed jailbreaks &mdash; six (subject, dataset) cells.
+        <em>Discriminating outcome.</em> If the AUC lift and behavioural-bypass pattern replicate across all four subjects on both datasets, the finding is a property of activation geometry under jailbreak that generalizes. If it only replicates on Gemma&nbsp;2&nbsp;27B / DAN, it's a model-or-distribution-specific artifact and the paper's claim narrows accordingly.
+      </li>
     </ol>
-    <p>The full bug analysis &mdash; including evidence, alternatives considered, reversibility &mdash; is in the decisions log linked under Receipts.</p>
+    <p>Q1 and Q2 run first &mdash; Q1 is essentially free given the existing baseline parquet, and Q2 fires only if Q1 returns a meaningfully novel <code>v_harm</code>. Q3 follows regardless. Q4 and Q5 are independent threads. Trigger conditions, budgets, and execution ordering are in the extensions plan linked under Receipts.</p>
+
+    <h2>Three implementation bugs found and fixed</h2>
+    <p>The first attempt at the cap implementation produced 100% degenerate token-loop output across every capped condition (<code>"th'th, the last, the last&hellip;"</code>; <code>"KenapaKenapaKenapa&hellip;"</code>). Three stacked bugs in the cap pipeline, all corrected before any number on this page was generated:</p>
+    <ol>
+      <li><strong>Sign convention.</strong> Lu et&nbsp;al.'s upstream <code>_apply_cap</code> is a ceiling on a <em>role-positive</em> direction (their published Qwen capping vectors are named <code>contrast_role_pos3_default1</code>); our locally computed AA was <em>Assistant-positive</em> per the standard contrast-vector recipe (<code>cos_sim</code> with the published Qwen capping vector at L=0 was &minus;1.0000). Composing them pushed Assistant activations <em>away</em> from Assistant &mdash; anti-defense. <em>Fix:</em> negate cap vectors inside the steerer config.</li>
+      <li><strong>Tau calibration sign.</strong> &tau; was the 25th percentile of role-rollout projections on +AA, but the cap operator (after the sign flip) reads <code>&lt;h, &minus;AA&gt;</code>, so the comparison sign was wrong: cap never fired. <em>Fix:</em> &tau;_role&nbsp;=&nbsp;&minus;p75 of the existing +AA calibration, mathematically equivalent to p25 in the role-positive distribution.</li>
+      <li><strong>Capping at the wrong depth.</strong> The original fallback (offset L*+6, width 8) sat at 50&ndash;65% of model depth on a model the paper does not publish a cap range for. The paper's Qwen and Llama caps both sit at 70&ndash;83% depth. <em>Fix:</em> relocate to layers&nbsp;[33,&nbsp;38] at 71.7&ndash;82.6% depth, proportionally matching the Qwen convention.</li>
+    </ol>
+    <p>The full bug analysis &mdash; evidence, alternatives considered, reversibility &mdash; is in the decisions log linked under Receipts.</p>
 
     <h2>Receipts</h2>
-    <p>The repository is structured to be auditable end-to-end. The plan and decisions documents track research judgment over time; downstream agents can reproduce every methodological choice from the URLs and revisions logged there.</p>
+    <p>The repository is structured to be auditable end-to-end. Plan and decisions documents track research judgment over time so any methodological choice on this page can be traced back to its motivation.</p>
     <div class="receipts">
       <ul>
         <li><strong>Code:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">github.com/pragalbh-dev/multi-axis-persona-safety</a></li>
-        <li><strong>Stage 2 plan (Plan B execution):</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/stage-2-infrastructure.md"><code>plans/stage-2-infrastructure.md</code></a></li>
-        <li><strong>Decisions log:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/decisions.md"><code>plans/decisions.md</code></a> &mdash; bf16/fp8 revert, Plan B scope cut, HF/vLLM backend split, the three-bug cap fix this run, &lambda; calibration via 50-prompt sanity sweep</li>
+        <li><strong>Experimental protocol &amp; methodology:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/stage-2-infrastructure.md"><code>plans/stage-2-infrastructure.md</code></a> &mdash; phased pipeline, judge protocol, layer-range conventions, calibration recipe</li>
+        <li><strong>Decisions log:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/decisions.md"><code>plans/decisions.md</code></a> &mdash; bf16/fp8 revert, scope cuts, HF/vLLM backend split, the three-bug cap fix this run, &lambda; calibration via 50-prompt sanity sweep</li>
         <li><strong>Project conventions:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a> &mdash; locked schemas, statistical framework, judge protocol</li>
-        <li><strong>Plan B config:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/configs/plan_b.yaml"><code>configs/plan_b.yaml</code></a></li>
-        <li><strong>Run manifest (post-run):</strong> <code>results/plan_b_gemma2_27b/manifest.json</code> &mdash; schema, seed, git SHA, per-phase wall clock, peak VRAM</li>
-        <li><strong>Per-prompt details:</strong> <code>results/plan_b_gemma2_27b/details.parquet</code> &mdash; 3,000 rows of (prompt, response, condition_id, harm_label, AA + PC1..PC10 projections at L*=21).</li>
-        <li><strong>Final metrics:</strong> <code>results/plan_b_gemma2_27b/metrics.json</code> &mdash; per-condition harm + BCa CI, blind-spot AUC delta + CI, Cohen's d for PC2/PC3 within-capped, selected PCs.</li>
+        <li><strong>Experiment configuration:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/configs/plan_b.yaml"><code>configs/plan_b.yaml</code></a></li>
+        <li><strong>Research extensions plan:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/extensions_post_plan_b.md"><code>plans/extensions_post_plan_b.md</code></a> &mdash; the five next-phase research questions with budgets, trigger conditions, and predicted discriminating outcomes</li>
+        <li><strong>Run manifest:</strong> <code>results/plan_b_gemma2_27b/manifest.json</code> &mdash; schema, seed, git SHA, per-phase wall clock, peak VRAM</li>
+        <li><strong>Per-prompt details:</strong> <code>results/plan_b_gemma2_27b/details.parquet</code> &mdash; 3,000 rows of (prompt, response, condition, harm label, AA + PC1..PC10 projections at L*=21)</li>
+        <li><strong>Final metrics:</strong> <code>results/plan_b_gemma2_27b/metrics.json</code> &mdash; per-condition harm + BCa CI, blind-spot AUC delta + CI, Cohen's d for PC2/PC3 within-cap, selected PCs, refusal-keyword rates per condition</li>
       </ul>
     </div>
 
