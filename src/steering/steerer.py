@@ -71,8 +71,18 @@ def from_config(model: nn.Module, cfg: SteeringConfig) -> ActivationSteering:
     n_vec = len(cfg.vectors)
 
     if cfg.intervention_type == "capping":
-        # For each vector, expand its layer entry into per-layer ints, then
-        # broadcast the (vector, threshold) pair across those layers.
+        # SIGN-CONVENTION FIX (2026-04-26):
+        # `external/assistant-axis::compute_axis` returns mean(default) - mean(role)
+        # ("Assistant-positive"). The upstream `_apply_cap` is a CEILING:
+        # `excess = (proj - tau).clamp(min=0); h -= excess · v`. With Assistant-positive
+        # v, this clamps the *Assistant* component from above and pushes high-projection
+        # (Assistant-like) activations DOWN toward role — opposite of the paper's defense.
+        # Lu et al.'s released `qwen-3-32b/capping_config.pt` uses role-positive vectors
+        # (keyed `contrast_role_pos3_default1`); cos_sim(their_cap_v, AA) = -1.000 at every
+        # layer. Our pipeline loaded raw AA from `compute_axis` and never flipped.
+        # Fix: negate every capping vector here. Caller's τ MUST be in role-positive space
+        # (i.e., set τ = p25 of <h, -AA> over role rollouts, optionally centered on
+        # default-Assistant mean). See plans/decisions.md 2026-04-26 entry.
         expanded_vectors: list[torch.Tensor] = []
         expanded_layers: list[int] = []
         expanded_taus: list[float] = []
@@ -80,7 +90,8 @@ def from_config(model: nn.Module, cfg: SteeringConfig) -> ActivationSteering:
             entry = cfg.layer_indices[i] if i < len(cfg.layer_indices) else cfg.layer_indices[0]
             layers = _expand_layer_ranges([entry], "capping")  # type: ignore[arg-type]
             for L in layers:
-                expanded_vectors.append(cfg.vectors[i])
+                # Negate Assistant-positive AA → role-positive direction the upstream cap expects.
+                expanded_vectors.append(-cfg.vectors[i])
                 expanded_layers.append(L)
                 expanded_taus.append(cfg.cap_thresholds[i])
         return ActivationSteering(

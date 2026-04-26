@@ -1,0 +1,88 @@
+# Plan B configuration — single-subject H1 demonstration on Gemma 2 27B.
+# Replaces the original Stage 2 T2.9 2-hour smoke test.
+# See plans/stage-2-infrastructure.md T2.9 + plans/decisions.md 2026-04-25 22:00.
+
+experiment_id: plan_b_gemma2_27b
+seed: 42
+output_dir: results/plan_b_gemma2_27b
+
+# ── Subject ────────────────────────────────────────────────────────────────
+model_id: gemma_2_27b      # key in configs/subjects.yaml + inference_runtime.yaml
+dtype: bf16
+tensor_parallel: 4
+
+# ── Plan B scope cuts (per plans/decisions.md 2026-04-25 22:00) ───────────
+n_dan_prompts: 500          # down from 1100
+n_role_rollouts_per_role: 30   # down from 100
+n_default_assistant_rollouts: 50  # 5 system prompts × 10 rollouts each
+n_random_baselines: 5
+
+# ── Extraction (Step 1-2) ─────────────────────────────────────────────────
+# L_star is determined at runtime by argmax cos_sim(PC1, AA) per layer; we record
+# the offline validation result here as the expected value:
+expected_l_star: 21
+extraction_layers_for_pca: null   # null = all 46 layers
+top_k_pcs: 10
+
+# ── Capping (Step 4) ──────────────────────────────────────────────────────
+# Layer range chosen by relative-depth extrapolation from paper's Qwen-3-32B
+# convention (layers 46–53 of 64 = 71.9–82.8% depth, width 12.5%). For Gemma 2
+# 27B (46 layers) the proportional range is layers [33,38] = 71.7–82.6% depth
+# (width 13%). The paper does NOT publish a Gemma 2 27B capping range; this
+# extrapolation supersedes the original L*+6 fallback (layers [23,30] at
+# 50–65% depth) which produced degenerate token-loop outputs. See
+# plans/decisions.md 2026-04-26 entry.
+capping_center_offset_from_lstar: 15   # → center=36 if L*=21
+capping_width: 6                        # → layers [33, 38] if L*=21
+tau_percentile: 25                      # paper line 685 default; Plan B reads -p75 via sign-flip math
+
+# ── Steering (Steps 6) ────────────────────────────────────────────────────
+# λ chosen via sanity sweep (results/plan_b_gemma2_27b/_sanity_lambda_sweep/summary.json):
+# at L*=21 the lmsys mean residual norm is ≈24,440 — so λ=2 means adding 48,881 of
+# perturbation, ~2× the residual norm, which collapses Gemma 2 27B into token loops
+# (KenapaKenapa…) even with the corrected cap. Sweep over {0.25, 0.5, 1.0} found:
+#   λ=1.00 →  54% coherent
+#   λ=0.50 →  70% coherent
+#   λ=0.25 →  88% coherent, refusal-keyword 79%→8% vs cap-alone (clean H1 signal).
+# Plan B uses λ=0.25 for both PC2/PC3 attacks and the random baselines.
+pc_indices_to_steer: [2, 3]            # 1-indexed: PC2 + PC3
+steering_lambdas: [0.25]               # positive only for MVP H1 attack story
+random_baseline_lambda: 0.25
+
+# ── Generation profiles (read from configs/inference_runtime.yaml) ────────
+extraction_profile: short              # 762 tok/s for Gemma 2 27B
+baseline_profile: long                 # 542 tok/s; full DAN prompts can be long
+hf_steered_batch_size: 8               # safe with sdpa-forced attention (no O(N²) materialization)
+hf_steered_max_input_len: 4096         # 99.6% DAN coverage; left-trunc preserves harmful question on the 4 outliers
+max_new_tokens: 256
+
+# ── Judge (Step 7a) ───────────────────────────────────────────────────────
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml
+
+# ── T2.4.5 GPT-5.5 ground truth ───────────────────────────────────────────
+gpt55_validation:
+  n_samples: 200
+  model: gpt-5.5                # reasoning model — uses max_completion_tokens, no temperature
+  max_concurrent: 100
+  max_output_tokens: 2048       # generous, accommodates hidden CoT
+  budget_usd: 15.0
+  # User must set these from current OpenAI pricing before kickoff:
+  input_price_per_mtok: 5.0
+  output_price_per_mtok: 15.0
+
+# ── MVP scope filter (Plan B sign+tau+layer fix re-run) ──────────────────
+# When true, step_6 only runs the 5 conditions needed to demonstrate H1:
+# baseline (already on disk) + aa_capped + aa_capped_pc{2,3}_pos2 +
+# aa_capped_random_{0,1}_pos2. Drops pc{2,3}_neg2 and randoms 2-4. Set false
+# to re-run all 11 conditions (post-deadline replay).
+mvp_only: true
+
+# ── Acceptance criteria (T2.9 spec) ──────────────────────────────────────
+acceptance:
+  aa_cap_min_reduction_pp: 30.0
+  pc_recovery_min_pp: 10.0
+  random_recovery_max_pp: 5.0
+  pc1_aa_cos_sim_min: 0.7
+  blind_spot_auc_lift_min: 0.02
+  judge_agreement_min: 0.85

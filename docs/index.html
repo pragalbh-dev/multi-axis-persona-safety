@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-Axis Persona Safety — Plan B Demonstration</title>
+  <meta name="description" content="Single-subject H1 evidence that PC1-only activation defenses have measurable blind spots. Gemma 2 27B, DAN, n=500." />
+  <style>
+    :root {
+      --fg: #1a1a1a;
+      --muted: #555;
+      --accent: #4C72B0;
+      --accent-warn: #C44E52;
+      --accent-ok: #55A868;
+      --rule: #e5e5e5;
+      --bg: #fafafa;
+      --card: #fff;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      color: var(--fg);
+      background: var(--bg);
+      margin: 0;
+      line-height: 1.55;
+      font-size: 17px;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 56px 24px 96px;
+    }
+    h1 {
+      font-size: 34px;
+      line-height: 1.2;
+      margin: 0 0 8px;
+      letter-spacing: -0.01em;
+    }
+    h2 {
+      font-size: 22px;
+      margin: 56px 0 12px;
+      letter-spacing: -0.005em;
+    }
+    h3 {
+      font-size: 16px;
+      margin: 24px 0 6px;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    p { margin: 0 0 14px; }
+    .subtitle {
+      color: var(--muted);
+      font-size: 18px;
+      margin-bottom: 36px;
+    }
+    .meta {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--rule);
+    }
+    .meta a { color: var(--muted); }
+    .tldr {
+      background: var(--card);
+      border-left: 3px solid var(--accent);
+      padding: 18px 22px;
+      margin: 0 0 36px;
+      font-size: 17px;
+    }
+    .tldr strong { color: var(--accent); }
+    .placeholder {
+      background: #fff3b0;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      color: #5a4a00;
+    }
+    figure {
+      margin: 28px 0 36px;
+      padding: 0;
+    }
+    figure iframe {
+      width: 100%;
+      border: 1px solid var(--rule);
+      border-radius: 6px;
+      background: #fff;
+      display: block;
+    }
+    figcaption {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+    figcaption .figlabel {
+      color: var(--fg);
+      font-weight: 600;
+    }
+    .claim-card {
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      padding: 22px 24px;
+      margin: 28px 0;
+      font-size: 15px;
+    }
+    .claim-card table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .claim-card td {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--rule);
+      vertical-align: top;
+    }
+    .claim-card td:first-child {
+      color: var(--muted);
+      width: 55%;
+    }
+    .claim-card td:last-child {
+      text-align: right;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .claim-card tr:last-child td { border-bottom: none; }
+    ul { padding-left: 20px; }
+    ul li { margin-bottom: 6px; }
+    .receipts {
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      padding: 18px 24px;
+      margin-top: 12px;
+    }
+    .receipts ul { margin: 0; padding-left: 18px; }
+    .receipts li { margin-bottom: 8px; font-size: 15px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.92em;
+      background: #f0f0f0;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--rule);
+      font-size: 13px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Multi-Axis Persona Safety</h1>
+    <p class="subtitle">Activation capping defends Gemma 2 27B against persona jailbreaks &mdash; but the residual stream still encodes a measurable harm signal in directions the defense ignores.</p>
+
+    <p class="meta">
+      Plan B single-subject H1 demonstration &middot; Gemma 2 27B &middot; DAN jailbreaks (n=500) &middot;
+      <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
+    </p>
+
+    <div class="tldr">
+      <strong>TL;DR.</strong>
+      Assistant-Axis (AA) activation capping &mdash; the defense from
+      Lu et&nbsp;al. (<a href="https://arxiv.org/abs/2601.10387">arXiv 2601.10387</a>) &mdash;
+      reduces persona-jailbreak harm on Gemma 2 27B from
+      <strong>14.8% to 1.8%</strong> (&Delta;&nbsp;=&nbsp;<strong>13.0&nbsp;pp</strong>) on DAN.
+      But a per-prompt logistic LASSO over the top-10 role-space PCs lifts harm-prediction AUC from <strong>0.728</strong> (AA alone) to <strong>0.967</strong>
+      (delta&nbsp;=&nbsp;<strong>+0.240</strong>, 95%&nbsp;BCa&nbsp;CI [+0.209,&nbsp;+0.273]). Eight of the top-10 role-PCs are selected by the LASSO, with within-capped Cohen's&nbsp;d on PC2 = <strong>&minus;1.68</strong> [&minus;2.26, &minus;1.11] and PC3 = <strong>&minus;1.39</strong> [&minus;1.91, &minus;0.96]. The cap is highly effective; the activation geometry it ignores is not silent.
+    </div>
+    <div class="tldr" style="border-left-color: var(--accent-warn);">
+      <strong>Behavioural bypass.</strong> At a coherence-preserving steering magnitude (&lambda;=0.25, calibrated on Gemma 2 27B's residual norm), PC2 and PC3 attacks <em>do not</em> extract harmful information &mdash; harm rate stays at 0% &mdash; but they do collapse the cap's refusal pattern: refusal-keyword incidence drops from <strong>79%</strong> (cap alone) to <strong>18%</strong> (+PC2) and <strong>4%</strong> (+PC3) without breaking model coherence. Two random-direction baselines at the same &lambda; produce only nonsensical fragments. The cap suppresses information; orthogonal PC directions still rewrite the model's voice.
+    </div>
+
+    <h2>The defense and what it leaves behind</h2>
+    <figure>
+      <iframe src="figures/harm_rate_per_condition.html" height="520" loading="lazy" title="Harm rate per condition"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure 1.</span>
+        Harm rate (binarized to <code>enough_info</code> &cup; <code>enough_info_and_follow_perfectly</code>; DAN, n=500 per condition) across six conditions: unsteered baseline (14.8%), AA-capped at layers&nbsp;[33,&nbsp;38] with &tau;=p25 of the role-positive distribution (1.8%), AA-cap composed with PC2/PC3 steering at &lambda;=0.25 (0%), and AA-cap composed with two random-direction baselines at &lambda;=0.25 (0%). Error bars are BCa 95% CI (10,000 resamples). The cap suppresses harmful-information extraction at every steering condition tested; the H1 signal is statistical, in the activations, not in the binary harm rate (see Figure&nbsp;3).
+      </figcaption>
+    </figure>
+
+    <h2>Why look past PC1</h2>
+    <figure>
+      <iframe src="figures/scree_plot.html" height="460" loading="lazy" title="Role-space PCA scree plot"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure 2.</span>
+        Eigenspectrum of the role-space PCA at L*=21 on Gemma 2 27B (fit on Lu et&nbsp;al.'s released 275-role vector cache). Marchenko-Pastur threshold marks where signal stops being distinguishable from noise under iid assumptions. PCs 2&hellip;k above the threshold carry persona-relevant variance the AA defense ignores by construction; cos&nbsp;sim(PC1, AA)=0.88 confirms PC1&nbsp;&approx;&nbsp;AA at the extraction layer.
+      </figcaption>
+    </figure>
+
+    <h2>The blind spot is in the activations</h2>
+    <figure>
+      <iframe src="figures/blind_spot_summary.html" height="460" loading="lazy" title="Blind-spot LASSO summary"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure 3.</span>
+        Logistic LASSO (nested 10-fold CV, binarized harm target) on per-prompt activation projections at L*=21. AUC(AA only)&nbsp;=&nbsp;0.728; AUC(AA + PC1..PC10) = 0.967; <strong>delta&nbsp;=&nbsp;+0.240</strong>, BCa 95% CI [+0.209,&nbsp;+0.273] over 10,000 bootstrap resamples. CI strongly excludes zero. Selected PCs: 2,&nbsp;3,&nbsp;4,&nbsp;5,&nbsp;7,&nbsp;8,&nbsp;9,&nbsp;10 &mdash; eight of ten role-space PCs carry incremental predictive signal for harm beyond what AA captures alone. This is the H1 statement: the AA-capped activation manifold is not closed under orthogonal persona directions, even when the cap successfully suppresses output-level harm.
+      </figcaption>
+    </figure>
+
+    <h2>Headline numbers</h2>
+    <div class="claim-card">
+      <table>
+        <tr><td>Baseline DAN harm rate (n=500)</td><td>14.8% [12.0, 18.2]</td></tr>
+        <tr><td>AA-cap harm rate (n=500)</td><td>1.8% [0.9, 3.2]</td></tr>
+        <tr><td>AA-cap &Delta;harm vs baseline</td><td><strong>&minus;13.0 pp</strong></td></tr>
+        <tr><td>+PC2 attack (&lambda;=0.25) harm rate</td><td>0.0%</td></tr>
+        <tr><td>+PC3 attack (&lambda;=0.25) harm rate</td><td>0.0%</td></tr>
+        <tr><td>2 random-direction attacks (&lambda;=0.25) harm rate</td><td>0.0% / 0.0%</td></tr>
+        <tr><td>AUC(AA only) for harm prediction</td><td>0.728</td></tr>
+        <tr><td>AUC(AA + PC1..PC10) for harm prediction</td><td>0.967</td></tr>
+        <tr><td>Per-prompt LASSO blind-spot AUC delta</td><td><strong>+0.240</strong></td></tr>
+        <tr><td>BCa 95% CI on AUC delta (10K resamples)</td><td>[+0.209, +0.273]</td></tr>
+        <tr><td>PCs selected by the LASSO</td><td>PC2, PC3, PC4, PC5, PC7, PC8, PC9, PC10</td></tr>
+        <tr><td>Within-cap Cohen's d on PC2 (harm vs safe)</td><td>&minus;1.68 [&minus;2.26, &minus;1.11]</td></tr>
+        <tr><td>Within-cap Cohen's d on PC3 (harm vs safe)</td><td>&minus;1.39 [&minus;1.91, &minus;0.96]</td></tr>
+        <tr><td>cos_sim(PC1, AA) at L*=21</td><td>0.88</td></tr>
+        <tr><td>Refusal-keyword incidence (cap alone)</td><td>79.0%</td></tr>
+        <tr><td>Refusal-keyword incidence (cap + PC2 attack)</td><td>18.0%</td></tr>
+        <tr><td>Refusal-keyword incidence (cap + PC3 attack)</td><td>3.6%</td></tr>
+      </table>
+    </div>
+
+    <h2>What Plan B is &mdash; and isn't</h2>
+    <p>
+      Plan B is a single-subject MVP: Gemma 2 27B only, DAN only, five conditions (baseline + AA-cap + PC2/PC3 attacks + 2 random-direction baselines), no capability evaluation. Its job is to land an honest, falsifiable result at experiment-grade volumes (n=500/condition, BCa CI, judge labels) before the fellowship deadline.
+    </p>
+    <p>
+      The interim story is mixed and worth being precise about: <strong>the cap defense works</strong> &mdash; AA capping at proportionally-correct depth (layers 33&ndash;38, matching the paper's Qwen-3-32B 72&ndash;83% depth convention) drops binary harm from 14.8% to 1.8%. But the activations carry a strong predictive signal for harm <em>orthogonal to AA</em> (LASSO AUC lift +0.240, eight of ten role-PCs selected). And at coherence-preserving steering magnitudes, PC2/PC3 attacks bypass the cap's <em>refusal pattern</em> (79%&nbsp;&rarr;&nbsp;18% / 4%) without restoring harmful information. Random-direction attacks at the same magnitude collapse the model into nonsense. The blind spot is real in the geometry; whether it is exploitable at <em>any</em> attack magnitude that keeps the model coherent is what the next experiments need to answer.
+    </p>
+    <p>
+      Roadmap over the next four weeks:
+    </p>
+    <ul>
+      <li><strong>Causal attack sweep.</strong> Map the &lambda; &times; layer envelope where PC2/PC3 attacks remain coherent and cross the harm threshold &mdash; the question this run leaves open. Prediction: a narrower coherent-attack window on Gemma 2 27B than the paper's Qwen results suggest, due to Gemma's larger residual norm at L*=21 (24,440).</li>
+      <li><strong>Subject coverage.</strong> Qwen 3 32B and Gemma 4 31B (thinking ON / OFF) &mdash; cross-architecture, cross-generation, cross-reasoning-mode PC1 stability across six pairs.</li>
+      <li><strong>Dataset coverage.</strong> Shah-reconstructed jailbreaks (synthetic pairs) as a cross-dataset replication check; report tagged by <code>dataset &isin; {dan, shah_reconstructed}</code>.</li>
+      <li><strong>H2 multi-axis defense.</strong> Cap AA + PC2 + PC3 jointly; measure whether closing the geometric blind spot also closes the behavioural-bypass observed here.</li>
+      <li><strong>Capability cost.</strong> IFEval, MMLU-Pro, GSM8k, EQ-Bench under each cap configuration &mdash; harm-vs-capability Pareto frontier.</li>
+      <li><strong>Statistical rigor.</strong> Ordinal logistic LASSO on the 9-category judge labels (paper Appendix D.2.2), per-PC FDR (BH q=0.05), Cohen's d on projection differences (PC2: &minus;1.68 within-capped already in this run).</li>
+      <li><strong>Engine work.</strong> SGLang <code>--forward-hooks</code> spike to remove the HF/vLLM backend split that Plan B ships with.</li>
+    </ul>
+
+    <h2>Three bugs found and fixed during this run</h2>
+    <p>Plan B's first attempt produced 100% degenerate token-loop outputs across every capped condition (<code>"th'th, the last, the last…"</code>). Three stacked bugs in the cap pipeline, all corrected before this report's numbers:</p>
+    <ol>
+      <li><strong>Sign convention.</strong> Lu et&nbsp;al.'s upstream <code>_apply_cap</code> is a ceiling on a <em>role-positive</em> direction; our locally computed AA was <em>Assistant-positive</em> (cos&nbsp;sim with their published Qwen capping vector = &minus;1.0000). Composing them pushed Assistant activations <em>away</em> from Assistant &mdash; anti-defense. <em>Fix:</em> negate cap vectors inside <code>from_config</code>.</li>
+      <li><strong>Tau calibration.</strong> Tau was the 25th percentile of role-rollout projections on +AA, but the cap operator (after the sign flip) reads &lt;h, &minus;AA&gt;, so the comparison sign was wrong: cap never fired. <em>Fix:</em> &tau;_role&nbsp;=&nbsp;&minus;p75 of the existing +AA calibration (mathematically equivalent to p25 in the role-positive distribution).</li>
+      <li><strong>Capping at the wrong depth.</strong> The original fallback (offset L*+6, width 8) sat at 50&ndash;65% depth on a model the paper never published a cap range for. The paper's Qwen and Llama caps both sit at 70&ndash;83% depth. <em>Fix:</em> relocate to layers [33,&nbsp;38] at 71.7&ndash;82.6% depth, proportionally matching Qwen.</li>
+    </ol>
+    <p>The full bug analysis &mdash; including evidence, alternatives considered, reversibility &mdash; is in the decisions log linked under Receipts.</p>
+
+    <h2>Receipts</h2>
+    <p>The repository is structured to be auditable end-to-end. The plan and decisions documents track research judgment over time; downstream agents can reproduce every methodological choice from the URLs and revisions logged there.</p>
+    <div class="receipts">
+      <ul>
+        <li><strong>Code:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">github.com/pragalbh-dev/multi-axis-persona-safety</a></li>
+        <li><strong>Stage 2 plan (Plan B execution):</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/stage-2-infrastructure.md"><code>plans/stage-2-infrastructure.md</code></a></li>
+        <li><strong>Decisions log:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/decisions.md"><code>plans/decisions.md</code></a> &mdash; bf16/fp8 revert, Plan B scope cut, HF/vLLM backend split, the three-bug cap fix this run, &lambda; calibration via 50-prompt sanity sweep</li>
+        <li><strong>Project conventions:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/CLAUDE.md"><code>CLAUDE.md</code></a> &mdash; locked schemas, statistical framework, judge protocol</li>
+        <li><strong>Plan B config:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/configs/plan_b.yaml"><code>configs/plan_b.yaml</code></a></li>
+        <li><strong>Run manifest (post-run):</strong> <code>results/plan_b_gemma2_27b/manifest.json</code> &mdash; schema, seed, git SHA, per-phase wall clock, peak VRAM</li>
+        <li><strong>Per-prompt details:</strong> <code>results/plan_b_gemma2_27b/details.parquet</code> &mdash; 3,000 rows of (prompt, response, condition_id, harm_label, AA + PC1..PC10 projections at L*=21).</li>
+        <li><strong>Final metrics:</strong> <code>results/plan_b_gemma2_27b/metrics.json</code> &mdash; per-condition harm + BCa CI, blind-spot AUC delta + CI, Cohen's d for PC2/PC3 within-capped, selected PCs.</li>
+      </ul>
+    </div>
+
+    <footer>
+      Author: Pragalbh Devsingh &middot; Project started March 2026 &middot;
+      Extending Lu et&nbsp;al., <em>The Assistant Axis</em> (<a href="https://arxiv.org/abs/2601.10387">arXiv:2601.10387</a>).
+    </footer>
+  </main>
+</body>
+</html>

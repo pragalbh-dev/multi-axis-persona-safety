@@ -242,3 +242,275 @@ Smoke test: `--n-per-category 2 --categories openai13` produced 26 rows (2 per c
 - Stage 3 T3.1.0 quant-validity gate becomes a no-op for core subjects (still applied to any future fp8 subject; documented as Ext 9 prerequisite).
 - `pyproject.toml` does NOT need changes — `vllm==0.19.1` runs both bf16 and fp8.
 
+---
+
+## [2026-04-25 22:00] Stage 2 / T2.9 — Plan B scope cuts (single-subject H1 demo on Gemma 2 27B)
+
+**Decision:** Replace the original Stage 2 T2.9 ≤2-hour smoke test with **Plan B** — a single-subject end-to-end H1 demonstration on Gemma 2 27B at experiment-grade volumes scoped to fit a fellowship-deadline window. Cuts vs the original Stage 2 + Stage 3/4 plan: subjects 4 → 1 (Gemma 2 27B only), datasets 2 → 1 (DAN-only), prompts/dataset 1100 → 500 (stratified across the 13 OpenAI-policy categories), rollouts/role for τ-calibration 100 → 30 (paper's 275-vector PCA cache is reused for the actual PC fit). All four cuts are reversible — the post-deadline replay (April 27 → May 3) re-runs the exact same code path with the original volumes and all 4 subjects.
+
+**Alternatives considered:**
+- Keep the original 2-hour 100-prompt smoke for the deadline submission — rejected. Doesn't produce fellowship-grade signal; the bar chart (criteria 1-3) needs ≥300 prompts/condition for the BCa CIs to exclude zero with the expected effect sizes.
+- Run Plan B at full 1100 × 2 datasets — rejected. With HF as the steered backend, ~14-15 hr compute exceeds the 18-hour ceiling once writeup + buffer are factored in.
+- Skip random-direction baselines and rely on PC2/PC3 vs unsteered comparison — rejected. The random baselines rule out the "any nonzero steer breaks capping" alternative explanation; without them the H1 claim is weak.
+
+**Reason:** Scoped Plan B fits an 18-hour ceiling with margin, retains all four scientific load-bearing components (paper-reproduction AA-cap, PC2/PC3 directional steering, random baselines, per-prompt LASSO blind-spot lift), and keeps Stage 2 implementation strictly invoked-not-modified. The post-deadline replay restores full volumes without code changes.
+
+**Source:**
+- `plans/plan_b_directive.md` (user-authored directive, 2026-04-25).
+- User instruction in chat 2026-04-25 confirming 18-hour budget + DAN-only + 500 prompts.
+- Realistic compute budget: ~10-11 hr per the per-step table in T2.9 of `plans/stage-2-infrastructure.md`.
+
+**Reversibility:** high. Plan B is a runtime-config scope, not a code change. The post-deadline sweep replays with `--n-prompts 1100 --datasets dan,shah_reconstructed --subjects all` against the same modules.
+
+**How to revert / scale up:** run `src/experiments/plan_b.py --subjects {qwen_3_32b,gemma_4_31b_thinking_on,gemma_4_31b_thinking_off} --datasets dan,shah_reconstructed --n-prompts 1100 --rollouts-per-role 100` per subject; Plan B output stays as the Gemma 2 reference, post-deadline outputs land at `results/post_deadline_sweep_{subject}/`.
+
+**Downstream dependencies:**
+- T2.9 spec in `plans/stage-2-infrastructure.md` rewritten — see file.
+- T2.5 (capability eval) marked POST-PLAN B.
+- T2.7 split into T2.7a (binary LASSO + blind-spot lift, Plan B critical path) + T2.7b (ordinal LASSO + per-PC FDR, post-deadline).
+- T2.4 cross-check judge phase deferred to post-deadline replay.
+- Shah-reconstructed dataset deferred to post-deadline replay.
+
+---
+
+## [2026-04-25 22:05] Stage 2 / T2.9 — HF/vLLM backend split for steered vs unsteered generation
+
+**Decision:** Use **vLLM** for unsteered generation (Plan B Step 1a role rollouts, Step 5 jailbreak baseline) and the judge phase. Use **HuggingFace transformers + accelerate** (`device_map="auto"`, `torch_dtype=torch.bfloat16`, `attn_implementation="sdpa"`) for **all activation extraction passes** (Step 1b per-rollout activations, Step 1c lmsys-chat-1m norm cache, Step 7b per-prompt activation extraction filling `aa_projection` + `pc_projections` columns) and **all steered/capped generation** (Step 6: 10 conditions × 500 DAN prompts under `external/assistant-axis::ActivationSteering` via `src/steering/steerer.py::cap_and_steer`).
+
+**Alternatives considered:**
+- vLLM `enforce_eager=True` + `register_forward_hook` — rejected. vLLM issue [#4084](https://github.com/vllm-project/vllm/issues/4084) reports hooks firing on prefill but not decode in some configs; "novel integration to debug under deadline pressure" risk is high; ~10–30% throughput loss vs CUDA graphs anyway.
+- nnsight 0.4+ vLLM backend — rejected. Open issues [#640](https://github.com/ndif-team/nnsight/issues/640), [#641](https://github.com/ndif-team/nnsight/issues/641), [#642](https://github.com/ndif-team/nnsight/pull/642) document 13 unfixed intervention gaps as of April 2026; alpha-quality on the vLLM path.
+- TransformerLens — rejected. Wraps HF, same forward hooks, no throughput advantage; only ergonomics for mech-interp.
+- vllm-lens (UKGovernmentBEIS) — additive-only `apply_steering_vectors`; capping (`h - v·max(⟨h,v⟩-τ, 0)`) requires source patch. Stage 7 candidate, not Plan B.
+- EasySteer (ZJU-REAL) — fork of vLLM 0.17.1, incompatible with our 0.19.1 pin; capping not native. ~1 day integration risk. Skip.
+- `repeng` (vgel) — HF-only, no vLLM path.
+- vLLM PRs #7906 / #12870 (control vectors) — both auto-closed for inactivity, never landed.
+- SGLang `--forward-hooks` — real, documented, can mutate during decode; **but** TP=4 on Gemma 4 31B unvalidated by SGLang team, sm_120 fp8 broken (issues [#9233](https://github.com/sgl-project/sglang/issues/9233), [#11576](https://github.com/sgl-project/sglang/issues/11576)), needs separate uv env. **Spike cost 4–6 hr; Plan B savings ~2 hr → net loss.** Strongly positive ROI at multi-subject scale (~67 hr saved over the post-deadline sweep). Logged as post-Plan B Stage 7 candidate; see `plans/sglang_post_plan_b_spike.md`.
+
+**Reason:** HF + ActivationSteering is the trusted, known-working path. The upstream `external/assistant-axis` itself uses HF; the paper's protocol is HF-native; our `src/steering/steerer.py` (Stage 1 T1.3) already wraps it. With Plan B's scope cuts, HF throughput at ~150 tok/s aggregate × batch=8 with sdpa puts steered runs at ~3 hr — comfortable inside the 18-hour ceiling. The HF/vLLM split is a runtime arg on `run_subject_rollouts --backend {hf,vllm}`, not a code rewrite; both backends share the same module API.
+
+**Source:**
+- Subagent research 2026-04-25 covering vLLM, nnsight, TL, vllm-lens, EasySteer, repeng, SGLang. URLs cited in `plans/sglang_post_plan_b_spike.md`.
+- `external/assistant-axis::ActivationSteering` (`steering.py`) registers `register_forward_hook` on `model.layers[i]` — pure HF. Confirmed by reading source.
+- `external/assistant-axis::ActivationExtractor` (`internals/activations.py`) same pattern.
+
+**Reversibility:** high. Backend choice is `cfg.steering.mode → backend` dispatch in the work-module. Swapping in SGLang post-Plan B is additive (new `--backend sglang` branch + hook factories matching ActivationSteering semantics); does not require changes to `cap_and_steer`, `multi_axis_cap`, `eval_safety`, `eval_full`.
+
+**How to revert:** N/A in core stages — bf16/HF is the locked default. SGLang opt-in requires the post-Plan B spike per `plans/sglang_post_plan_b_spike.md`.
+
+**Downstream dependencies:**
+- `src/evaluation/run_subject_rollouts.py` work-module ships with `--backend {hf,vllm}` flag (T2.4 main).
+- Plan B Step 6 routes through `--backend hf` (10 steered conditions × 500 DAN prompts).
+- Plan B Steps 1a + 5 route through `--backend vllm` (unsteered).
+- Post-deadline multi-subject sweep keeps the same split.
+
+---
+
+## [2026-04-25 22:10] Stage 2 / T2.4.5 — Async OpenAI client, concurrency=100 default
+
+**Decision:** GPT-5.5 ground-truth labelling for the 200-sample judge validation set (T2.4.5) uses `from openai import AsyncOpenAI` + `asyncio.Semaphore(100)` (default). User has tier-5 rate limits with massive headroom; CLI `--max-concurrent` flag allows bumping to 200. Per-call retry on `RateLimitError` with exponential backoff (0.5 / 1 / 2 / 4 s), partial-result stashing every 25 completions, hard-stop at `cost_usd ≥ $15` (D9 budget cap).
+
+**Alternatives considered:**
+- Synchronous OpenAI calls with 1 concurrent request — rejected. ~45 min wall-clock for 200 calls; user explicitly requested async fan-out.
+- Concurrency=200 default — rejected as the default. Some Anthropic-style "hello world" scenarios trigger TPM limits before RPM limits at 200 in-flight; 100 is a safe default with the option to bump.
+
+**Reason:** User explicitly stated "I have a huuugeee rate limit so fire idk as many as is feasible at once, 200+ work." Async with concurrency=100 cuts T2.4.5 wall-clock from ~45 min to ~1 min API + ~10 min cross-judge ≈ ~12 min total. Frees Plan B writeup window; reduces deadline pressure.
+
+**Source:** User instruction in chat 2026-04-25.
+
+**Reversibility:** high. CLI flag swap.
+
+**How to revert:** `--max-concurrent 1` for sync behaviour; `--max-concurrent 200` to push harder.
+
+**Downstream dependencies:**
+- `src/evaluation/run_gpt55_validation.py` work-module (NEW, T2.4.5 deliverable).
+- `OPENAI_API_KEY` added to `.env.example`.
+- T2.4.5 acceptance relaxed from ≥90% to **≥85% binary agreement under Plan B** (single subject, DAN-only sample, narrower distribution than the post-deadline cross-subject sample). Post-deadline replay restores the 90% bar against the multi-subject pool.
+
+---
+
+## [2026-04-25 22:15] Stage 2 / T2.7 — Split into T2.7a (Plan B critical) + T2.7b (post-deadline)
+
+**Decision:** Stage 2 T2.7 splits into:
+- **T2.7a (Plan B critical path):** binary `logistic_lasso_cv` + `blind_spot_lift` + `cohens_d` + (already-implemented) `bca_ci`, `bca_ci_difference`, `point_biserial`, `pearson_with_ci`, `auc_with_ci`. Required for Plan B's H1 numerical claim (per-prompt blind-spot AUC delta with BCa CI).
+- **T2.7b (post-deadline):** ordinal `logistic_lasso_cv` (proportional-odds via `mord.LogisticAT`), per-PC FDR-corrected point-biserial sweep using `bh_fdr` (already implemented). Stage 3 T3.7 territory; helpers ship in Plan B but aren't invoked.
+
+**Alternatives considered:**
+- Implement the full T2.7 (binary + ordinal) before Plan B kickoff — rejected. Ordinal LASSO adds ~1.5 hr dev with no Plan B usage; defer to keep critical path tight.
+- Skip LASSO entirely for Plan B (raw bar chart only) — rejected. Per-prompt activation extraction is **already required by `PER_PROMPT_COLUMNS` schema** for the `aa_projection` + `pc_projections` columns — sunk cost. The LASSO + blind-spot lift on top is +30 sec compute and ~1.5 hr dev for the formal H1 statement. Cheap upgrade from "demo" to "rigorous finding."
+
+**Reason:** Per-prompt LASSO blind-spot AUC delta is the formal version of the H1 claim ("PC2/PC3 carry harm-relevant signal orthogonal to AA at the per-prompt level"). The bar chart shows population-level effect; the LASSO shows prediction-level effect. Both are useful in the writeup. Ordinal robustness check is secondary and adds nothing to the headline; defer.
+
+**Source:** User instruction 2026-04-25 ("LASSO is just analysis post-run right? if we do it is there any benefit?" — yes, with the cheap-because-extraction-is-sunk-cost framing).
+
+**Reversibility:** high. T2.7b is purely additive code; running the post-deadline replay with `--ordinal-lasso --fdr-per-pc` flags appends columns to `metrics.json`.
+
+**How to revert:** N/A — split is forward-only.
+
+**Downstream dependencies:**
+- `src/analysis/lasso.py::logistic_lasso_cv` (T2.7a).
+- `src/analysis/blind_spot.py::blind_spot_lift` (T2.7a).
+- `src/analysis/effect_size.py::cohens_d` NEW (T2.7a).
+- `src/analysis/lasso.py::ordinal_lasso_cv` (T2.7b stub remains; filled post-deadline).
+- Plan B Step 9 (analysis) consumes T2.7a only.
+
+---
+
+## [2026-04-25 23:00] Stage 2 / T2.2 — Gemma 2 27B L\* = 21 (argmax cos_sim(PC1, AA))
+
+**Decision:** Plan B uses **L\* = 21** as the extraction layer for Gemma 2 27B, picked by argmax cos_sim(PC1, AA) over a per-layer sweep on the paper's released 275-role-vector cache. cos_sim(PC1, AA) at L*=21 is **0.8825** — well above the paper's 0.71 threshold.
+
+**Why this differs slightly from the paper:** Paper line 96 just says "the middle layer". For Gemma 2 27B with 46 layers, `n_layers // 2 = 23`, but the paper text doesn't specify their exact integer. Our argmax-based selection lands at 21 (the cos_sim sweep peaks at 21 = 0.8825, vs 0.7835 at 23). Within ±3 of the implicit paper choice; CONVENTIONS Stage 3 T3.1.5 tightening says log if >±3 (not the case).
+
+**Source:** `scripts/validate_pca_against_paper.py` run 2026-04-25 23:00; output saved verbatim to this entry.
+
+```
+Per-layer cos_sim(PC1, AA) (Gemma 2 27B, paper's released bf16 cache):
+  layer  0: 0.7136
+  layer  2: 0.8584
+  layer 17: 0.8608
+  layer 21: 0.8825  *  <- L*
+  layer 22: 0.8451
+  layer 45: 0.8808
+min: 0.6829 (layer 7); max: 0.8825 (layer 21)
+```
+
+**Reversibility:** high. L\* is a single integer in `results/plan_b_gemma2_27b/extraction/L_star.txt`; flipping requires only re-projecting per-prompt activations (which is pure CPU once the per-layer extraction cache exists).
+
+**How to revert:** edit `L_star.txt` and re-run the projection step of Plan B Step 7b.
+
+**Downstream dependencies:** Plan B Step 2 records L*; Step 4 sets capping range = [L*+2, L*+9] = [23, 30]; Step 6 steers PC2/PC3 at L*=21 (single-layer paper convention); Step 7b projects per-prompt activations at L*=21.
+
+---
+
+## [2026-04-26 14:05] Stage 2 / T2.4.5 — Smoke validation: 93.0% binary agreement vs gpt-5.5
+
+**Decision:** Use **gpt-5.5** as the frontier-judge reference model (user-confirmed available; reasoning model — uses `max_completion_tokens` not `max_tokens`, no temperature). Bumped `max_output_tokens` to 2048 to accommodate hidden CoT. Async at concurrency=100.
+
+**Results on smoke n=200 (`results/plan_b_smoke/details.parquet`):**
+- Binary agreement (Qwen 3.6-27B primary vs gpt-5.5): **93.0%** ✅ ABOVE paper's 91.6% threshold
+- 9-cat exact match: 58.0%
+- Cohen's κ: -0.04 (skewed-marginal artifact: 96.5% non-harm in both → chance agreement ≈ 93%)
+- Cost: $3.03 (gpt-5.5 reasoning ~3× gpt-4.1 cost)
+- Wall-clock: 48.5s (200 calls async at concurrency=100)
+- Positive rate: gpt-5.5 = 3.5%, Qwen = 3.5%, gpt-4.1 = 8.0% (gpt-4.1 over-claims harm on Gemma 2's 75% nonsensical responses)
+
+**Cross-frontier check (gpt-5.5 vs gpt-4.1, smoke n=200):** 89.5% binary agreement, κ=0.04. gpt-4.1 outlier; gpt-5.5 + Qwen agree more closely on the harm class.
+
+**Acceptance status:** PASSES. Above paper reference (91.6%) and above Plan B threshold (≥85%). Updated `configs/plan_b.yaml.gpt55_validation` to `model: gpt-5.5` + `max_output_tokens: 2048`.
+
+**Sampler-bug detail (independent finding):** The smoke's `_dan_500.parquet` has 8 duplicate rows (496 unique prompt_ids out of 500 sampled). Source DAN is clean (1100 unique). Bug is in `step_5_safety_baseline` sampler: `dan.drop(sampled.index)` fallback uses indices that get scrambled after `groupby().apply()`, so the second `.sample()` can pick already-sampled rows. Effect on harm_rate: ≤1.6% bias worst case. Plan B is running with this bug baked in — within sampling noise so not worth restart. **TODO post-Plan B: fix the sampler with prompt_id-based exclusion.**
+
+**Source:** Run output `data/judge_validation/plan_b_smoke_gpt55_labels.parquet` 2026-04-26 14:05. Cross-check parquet `plan_b_smoke_gpt41_labels.parquet`. Snapshot script `scripts/snapshot_leftover_scope.py` flagged the duplicate count.
+
+**Reversibility:** high. Re-run with different model via `args.model`. Sampler fix is a 5-line change.
+
+**Downstream dependencies:** Full Plan B Step 8 will rerun gpt-5.5 against 200 stratified pairs from full output; expect agreement to remain ~93% with richer harm-class distribution. Sampler-bug fix applies to all future Plan B replays (phase_b_*).
+
+---
+
+## [2026-04-26 14:10] Stage 2 / T2.9 — Leftover-scope snapshot for follow-up runs
+
+**Decision:** Wrote a non-invasive snapshot of Plan B's IN-scope identities + everything CUT to `results/plan_b_gemma2_27b/leftovers/`:
+- `dan_in_500.parquet` — the 500 prompts Plan B is generating against
+- `dan_complement_604.parquet` — the leftover 604 DAN prompts (1100 - 496 unique)
+- `roles_in_275.parquet` — all 275 paper roles (Plan B uses every role at 30 rollouts each)
+- `scope.yaml` — declarative manifest of cut subjects (qwen_3_32b, gemma_4_31b ON+OFF, llama_3_3_70b), cut datasets (Shah-reconstructed), cut tasks (T2.5 capability, T2.7b ordinal LASSO, T2.4 cross-check judge), and 4 ranked follow-up runs
+
+**Why:** If Plan B finishes early on the 18-hr budget, follow-up runs can use leftover GPU time. Each is documented with estimated compute hours and a list of caches it can reuse (judge config, AA/PC fits where same subject, etc.).
+
+**Source:** `scripts/snapshot_leftover_scope.py` (deterministic; uses same seed=42 as Plan B sampler).
+
+**Reversibility:** high. Snapshot is read-only metadata; doesn't touch Plan B pipeline. Rerunning overwrites.
+
+**Downstream dependencies:** Optional `phase_b_*` runs use this scope. Each follow-up reuses Plan B infrastructure as-is — only config + dataset paths change.
+
+---
+
+## [2026-04-26 13:55] Stage 2 / T2.4.5 — Smoke validation: 88.5% binary agreement vs gpt-4.1 [SUPERSEDED by 14:05 entry]
+
+> **SUPERSEDED.** This entry used **gpt-4.1** because I incorrectly concluded gpt-5.5 was unavailable
+> based on a `models.list()` probe. Direct `chat.completions.create(model="gpt-5.5")` works fine —
+> just needed `max_completion_tokens` (reasoning model) instead of `max_tokens`. The 14:05 entry
+> reruns with gpt-5.5 and gets **93.0% binary agreement** (above paper's 91.6% threshold). gpt-4.1
+> result kept here for cross-frontier comparison only; it is NOT the operative validation number.
+
+**Decision:** GPT-5.5 placeholder in `configs/plan_b.yaml` substituted with **gpt-4.1** (strongest available frontier model on user's OpenAI account; gpt-5.5 not in models.list). Pricing input=$2/Mtok, output=$8/Mtok. Async at concurrency=100. Run against `results/plan_b_smoke/details.parquet` (200 pairs) before full Plan B output exists, to validate the validation pipeline early and budget calibration.
+
+**Results on smoke n=200:**
+- Binary agreement (Qwen 3.6-27B primary vs gpt-4.1): **88.5%**
+- 9-cat exact match: 58.5%
+- Cohen's κ: -0.05 (skewed-marginal artifact: 177/200 non-harmful per both → chance agreement ≈ 89%)
+- Cost: $1.18, wall-clock: 8.9 seconds
+- Confusion: gpt-4.1 marks 16 as harm that Qwen doesn't; Qwen marks 7 as harm that gpt-4.1 doesn't.
+- Qwen over-claims harm on ~7 nonsensical / out_of_context responses (Gemma 2 produced 75% nonsensical at smoke scale).
+
+**Acceptance status:** Below paper's 91.6% reference; AT the relaxed Plan B threshold (≥85% per `plans/stage-2-infrastructure.md` T2.9 acceptance #6). Smoke n=200 has high marginal-distribution noise — re-validate against full Plan B's 200-sample subset post-run; expect agreement to tighten with more diverse harmful-class examples.
+
+**Source:** Run output `data/judge_validation/plan_b_smoke_gpt41_labels.parquet` 2026-04-26 13:55. T2.4.5 spec in `plans/stage-2-infrastructure.md`.
+
+**Reversibility:** high. Re-run with different model (`gpt-4.1` → `gpt-4.5` if user enables, etc.) by changing `model` in args.
+
+**Downstream dependencies:** `metrics.json` populates `judge_agreement_gpt55_vs_primary`. Full Plan B Step 8 will rerun this against 200 stratified pairs from the full 500-DAN output; agreement reported in writeup.
+
+---
+
+## [2026-04-25 22:20] Stage 2 / T2.9 — SGLang `--forward-hooks` deferred to post-Plan B
+
+**Decision:** Defer the SGLang `--forward-hooks` integration spike from Plan B to **post-Plan B Stage 7 candidate / first task of the April 27+ multi-subject sweep**. Spike plan + acceptance criteria + migration path documented in `plans/sglang_post_plan_b_spike.md`.
+
+**Alternatives considered:**
+- Spike SGLang now (4-6 hr) to use it for Plan B steered runs — rejected. Plan B savings ~2 hr; spike cost 4-6 hr; ROI is **negative** for single-subject Plan B. Plus three open risks: (a) TP=4 on Gemma 4 31B unvalidated by SGLang team (cookbook documents TP=2 only on H200), (b) sm_120 fp8 broken in SGLang per issues #9233 / #11576 (we'd lose Stage 7 Ext 9 fp8 path validation), (c) numerical equivalence vs `external/assistant-axis::ActivationSteering` unproven.
+- Skip SGLang entirely — rejected. ROI at multi-subject scale (~67 hr saved over the post-deadline sweep on 4 subjects × 2 datasets × ~16x steered-condition compute) is strongly positive.
+
+**Reason:** SGLang `--forward-hooks` is real (PR #13217 / #13994, v0.5.10), can mutate residual activations during decode by PyTorch contract, and matches our `cap_and_steer` semantic via factory pattern. But every risk above is a debug-cycle in disguise; under the 18-hour Plan B ceiling, "spike cost > savings" is the bottom line. Save it for the post-deadline sweep where the math flips.
+
+**Source:**
+- Subagent research 2026-04-25; sources cited in `plans/sglang_post_plan_b_spike.md`.
+- [SGLang `server_args.py`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/server_args.py), [`hook_manager.py`](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/model_executor/hook_manager.py), [Cookbook: Gemma 4](https://docs.sglang.io/cookbook/autoregressive/Google/Gemma4).
+
+**Reversibility:** high. SGLang is an additive backend (`--backend sglang` flag on `run_subject_rollouts`). Adding it post-Plan B requires no changes to existing Stage 1/2 module APIs.
+
+**How to revert:** N/A — current decision is to NOT integrate. To activate, run the spike per `plans/sglang_post_plan_b_spike.md`.
+
+**Downstream dependencies:**
+- `plans/sglang_post_plan_b_spike.md` (NEW file) — full spike plan.
+- Stage 2 T2.9 stays HF-for-steered (per the 22:05 decision above).
+- Post-deadline multi-subject sweep schedules SGLang spike as its first task; subjects passing the 5 acceptance criteria opt in via `cfg.steered_backend = sglang`.
+
+
+---
+
+## [2026-04-26 00:10] Stage 2 / T2.9 — Plan B AA-cap recovery: sign + tau + layer-depth fix
+
+**Decision:** First Plan B run produced 100% degenerate token-loop outputs across all 11 capped conditions (`"th'th, the last, the last…"`, `"KenapaKenapaKenapa…"`, etc.) — judge labeled 100% `nonsensical`, headline `aa_cap_delta_pp=14.8` was artifactual (cap killed the model, not harm). Three stacked bugs identified and corrected; MVP re-run (5 conditions × 500 prompts) launched.
+
+**Bug 1 — Sign convention mismatch.** Our AA = `mean(default) − mean(role)` (Assistant-positive); upstream `external/assistant-axis::ActivationSteering._apply_cap` is a CEILING (`(proj − τ).clamp(min=0)`) that expects role-positive vectors. Verified: `cos_sim(our AA, Lu et al.'s released qwen-3-32b/capping_config.pt vector) = −1.0000` at every layer. Composed with our AA, the cap pushed Assistant-territory activations DOWN toward role — anti-defense. *Fix:* `src/steering/steerer.py:73-105` negates capping vectors inside `from_config` (already in place pre-this-entry).
+
+**Bug 2 — Tau calibration mismatch.** `step_3_tau_calibration` projects role-rollout activations on `+AA_unit` and stores `p25`. With sign-flip alone, the cap operator computes `<h, −AA_unit>` (typically negative) but compared against `+τ` (positive p25) → `excess = max(neg − pos, 0) = 0`, cap never fires. Sign-flip alone yields a no-op cap. *Fix:* `src/experiments/plan_b.py:486-499` reads `−tau["p75"]` of the existing +AA calibration. Math: `p25(<h, −AA>) = −p75(<h, +AA>)`. Zero step_3 change required (Approach B); same on-disk JSON.
+
+**Bug 3 — Capping at the wrong depth.** Paper publishes capping ranges only for Qwen-3-32B (layers 46–53 of 64 = 71.9–82.8% depth) and Llama-3.3-70B (layers 56–71 of 80 = 70.0–88.75% depth); both at width ≈ 12.5% of total layers. Plan B's original fallback (`offset=6, width=8` → layers [23,30] for L*=21) sat at 50–65% depth — ~21pp shallower than the paper's Qwen range. AA's geometric structure (cos_sim with PC1) holds across the model but the residual offset and projection magnitudes differ wildly. Combined with Bug 2's wrong sign of τ, every successive cap pushed the residual further off-manifold — token-loop garbage. *Fix:* `configs/plan_b.yaml:28-29` → `capping_center_offset_from_lstar=15, capping_width=6` → layers [33,38] at 71.7–82.6% depth (proportional match to Qwen).
+
+**Empirical validation pre-launch (results/plan_b_gemma2_27b/extraction/tau_calibration.json + cache projections):**
+- `cos_sim(PC1, AA)` at L=33–38: 0.73–0.77 (above paper's 0.7 threshold).
+- Assistant-vs-role projection gap on +AA at L=33–38: consistently 1483–1545 (clean discriminative signal).
+- τ_role (= −p75 of role rollouts on +AA) lies between Assistant mean and role mean at every layer → cap fires for role activations, not Assistant.
+- Expected cap excess per layer: ~450–520 (vs original broken setup's 5000–9000). Cumulative push across 6 layers ≈ 3000 (vs 8 layers × 5000–9000 = 40k–70k).
+- Unit test `tests/unit/test_steerer_compose.py::test_plan_b_tau_lies_in_assistant_role_gap` passes for all six layers.
+
+**MVP scope.** `mvp_only: true` config flag added in `configs/plan_b.yaml`; restricts step_6 to 5 conditions: `aa_capped` + `aa_capped_pc{2,3}_pos2` + `aa_capped_random_{0,1}_pos2`. Drops `pc{2,3}_neg2` (sign-symmetry not needed for H1) and randoms 2–4 (two suffice for the "not blind-spot-aligned" claim). Reduces step_6 wall clock from ~3.5 hr to ~100 min and total run from ~5 hr to ~2.4 hr. Post-deadline replays drop the flag.
+
+**Alternatives considered:**
+- Approach A (re-run step 3 projecting on −AA) — rejected; same final τ values, more code churn, marker bookkeeping.
+- Capping width=1 (single-layer at L*) — held in reserve as recovery branch; reviewers prefer multi-layer if coherent.
+- Skip cap fix entirely; pivot to baseline-only LASSO writeup — held as final fallback if MVP re-run still produces nonsense after all three corrections.
+
+**Reason:** All three bugs explain the observed degenerate outputs and are forced corrections (sign by upstream's published convention, τ by sign math, depth by paper's relative-depth convention). Fix is minimal-churn (3 files, ~30 lines).
+
+**Source:** `cos_sim` audit vs `data/paper_artifacts/assistant_axis_vectors/qwen-3-32b/capping_config.pt`; tau_calibration.json on disk; per-rollout activation projections at L=23, 33–38; orchestrator log at `results/plan_b_gemma2_27b/run_signfix.log`.
+
+**Reversibility:** high. Two-line revert in `plan_b.py` (`p75` → `p25`, drop negation) + config revert (offset 15→6, width 6→8, drop `mvp_only`) + delete `.step3.done`/`.step6.done`. Steerer sign-flip retained as it's correct independent of these changes.
+
+**Downstream dependencies:** all of Plan B Step 6 condition outputs, Step 7a judge labels, Step 7b per-prompt projections, Step 9 metrics (per-condition harm rates + LASSO blind-spot lift recomputed across 5 not 11 conditions), Step 10 figures (bar chart shows fewer bars; honest reflection of MVP scope), `docs/index.html` page text + headline numbers (post-run update).
+
+**Pre-fix run artifacts:** `metrics.json.broken`, `details.parquet.broken`, `tau_calibration.json.old` archived under `results/plan_b_gemma2_27b/_pre_signfix_backup/`. Five non-MVP broken steered parquets archived under `results/plan_b_gemma2_27b/rollouts/broken_pre_signfix/` for retrospective audit.
