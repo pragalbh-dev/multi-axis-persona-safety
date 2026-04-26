@@ -42,10 +42,9 @@ attack_arm_vectors: results/plan_b_gemma2_27b/extensions/attack_arm/extraction/v
 
 # ── Defence configurations ──────────────────────────────────────────────
 # Each entry: name → list of axes to cap (AA always included).
+# Skip aa_only defence — Phase 3 full runs already have those cells (aa_capped + each attack).
+# We'll splice them in at assembly time.
 defence_configs:
-  - name: aa_only
-    extra_axes: []
-    tau_percentile: 25
   - name: aa_pc2
     extra_axes: [signmatched_pc2]
     tau_percentile: 25

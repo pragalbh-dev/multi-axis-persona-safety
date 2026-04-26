@@ -228,32 +228,46 @@ def _build_defence_steering(
     cap_layers: list[int] = []
     for ax in defence_axes:
         for layer in layers:
-            cap_vectors.append(setup["axis_files"][ax][layer])
-            cap_thresholds.append(setup["axis_taus"][ax][layer])
+            # JSON-loaded setup has string keys; try both str and int.
+            ax_files = setup["axis_files"][ax]
+            ax_taus = setup["axis_taus"][ax]
+            key = str(layer) if str(layer) in ax_files else int(layer)
+            cap_vectors.append(ax_files[key])
+            tkey = str(layer) if str(layer) in ax_taus else int(layer)
+            cap_thresholds.append(float(ax_taus[tkey]))
             cap_layers.append(int(layer))
 
-    addition_vectors = []
-    addition_coefficients = []
-    addition_layers = []
     if attack_vector_path is not None:
-        addition_vectors.append(attack_vector_path)
-        addition_coefficients.append(float(attack_lambda))
-        addition_layers.append(int(l_star))
-
+        # Compound: cap (multi-axis) + steer (single-direction attack)
+        return {
+            "mode": "compound",
+            "cap_vectors": cap_vectors,
+            "cap_thresholds": cap_thresholds,
+            "cap_layers": cap_layers,
+            "addition_vectors": [attack_vector_path],
+            "addition_coefficients": [float(attack_lambda)],
+            "addition_layers": [int(l_star)],
+            "positions": "all",
+        }
+    # Zero-attack: pure capping. run_subject_rollouts capping mode uses keys
+    # "vectors" / "layers" / "cap_thresholds" (no cap_ prefix).
     return {
-        "mode": "compound" if addition_vectors else "capping",
-        "cap_vectors": cap_vectors,
+        "mode": "capping",
+        "vectors": cap_vectors,
         "cap_thresholds": cap_thresholds,
-        "cap_layers": cap_layers,
-        "addition_vectors": addition_vectors,
-        "addition_coefficients": addition_coefficients,
-        "addition_layers": addition_layers,
+        "layers": cap_layers,
         "positions": "all",
     }
 
 
 def step_3_matrix(cfg: dict, out_dir: Path, setup: dict) -> list[Path]:
-    """Run (defence × attack) interaction matrix on the Phase 3 subset."""
+    """Run (defence × attack) interaction matrix on the Phase 3 subset (harm-positive only).
+
+    Subset is filtered to harm-positive rows only (n_pos) — controls were already
+    saturated at low harm in Phase 3, so testing defence on them adds no signal
+    beyond verifying capability (left for future capability-eval work).
+    """
+    import pandas as pd
     from src.utils.model_runner import run_in_subprocess
 
     marker = out_dir / ".step3.done"
@@ -262,22 +276,31 @@ def step_3_matrix(cfg: dict, out_dir: Path, setup: dict) -> list[Path]:
     if marker.exists():
         return list(rollouts_dir.glob("*.parquet"))
 
-    subset_path = Path(cfg["attack_arm_subset"])
+    # Filter Phase 3 subset to harm-positive only (saves 50% of cell time).
+    subset_full_path = Path(cfg["attack_arm_subset"])
+    subset_full = pd.read_parquet(subset_full_path)
+    pos = subset_full[subset_full["stratum"] == "harm_pos"].copy()
+    subset_path = out_dir / "rollouts" / "_defence_subset_pos.parquet"
+    subset_path.parent.mkdir(parents=True, exist_ok=True)
+    pos.to_parquet(subset_path, index=False)
+    _log(f"step 3: filtered subset to harm-positive only, n={len(pos)} (was {len(subset_full)})")
+
     layers = cfg["capping_layers"]
     l_star = int(cfg["l_star"])
     chosen = setup["chosen_lambdas"]
 
     # Build attack list: (axis_name, vector_path, λ). Include 0-attack via None.
+    # Skip PC4-alone (Phase 3 showed harm rate 1.0% on aa_only — it does not recover
+    # harm even on the weakest defence; its inclusion in defence × PC4 matrix is uninformative).
+    SKIP_AXES = {"random_0", "random_1", "aa_control", "signmatched_pc4"}
     attacks: list[tuple[str, str | None, float]] = []
     if cfg.get("include_zero_attack", True):
         attacks.append(("zero", None, 0.0))
     if cfg.get("include_phase3_attacks", True):
         attack_vec_dir = Path(cfg["attack_arm_vectors"])
         for ax_name, lam in chosen.items():
-            if ax_name.startswith("random_"):
-                continue  # randoms covered in Phase 3 already
-            if ax_name == "aa_control":
-                continue  # AA-attack-on-AA-cap is degenerate; AA-attack-on-multi-axis is informative
+            if ax_name in SKIP_AXES:
+                continue
             v_path = attack_vec_dir / f"{ax_name}.safetensors"
             if not v_path.exists():
                 continue

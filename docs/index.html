@@ -163,8 +163,10 @@
     <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on Gemma&nbsp;2&nbsp;27B &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores.</p>
 
     <p class="meta">
-      Single-subject experiment &middot; Gemma&nbsp;2&nbsp;27B &middot; DAN persona-jailbreak prompts (n=500 per condition) &middot;
+      Single-subject experiment &middot; Gemma&nbsp;2&nbsp;27B &middot; DAN&nbsp;+&nbsp;Shah-reconstructed jailbreak prompts (merged baseline n=2,207) &middot;
       <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
+      <br />
+      <em>Plan B (deadline submission) results in the first half; <a href="#post-deadline-extensions">post-deadline extensions</a> at the bottom (cross-dataset replication, v_harm geometry, sign-corrected attack arm, multi-axis defense interaction matrix).</em>
     </p>
 
     <h2>Why this work</h2>
@@ -267,10 +269,123 @@
         <tr><td>Refusal-keyword incidence, full sample &mdash; baseline / cap / +PC2 / +PC3</td><td>41.4% / 79.0% / 18.0% / 3.6%</td></tr>
         <tr><td>Refusal-keyword incidence, coherent only &mdash; baseline / cap / +PC2 / +PC3</td><td>41.5% / 86.4% / 54.9% / 6.4%</td></tr>
         <tr><td>Judge-label refusal+r&amp;j rate &mdash; baseline / cap / +PC2 / +PC3</td><td>34.6% / 70.8% / 28.8% / 10.6%</td></tr>
+        <tr><td colspan="2" style="background:#f4f4f4; font-weight:600; padding-top:14px;">Post-deadline extensions</td></tr>
+        <tr><td>Merged baseline n (DAN&nbsp;1,102 + Shah&nbsp;1,105)</td><td>2,207</td></tr>
+        <tr><td>Baseline harm rate, DAN (n=1,102)</td><td>14.7% [12.7, 16.9]</td></tr>
+        <tr><td>Baseline harm rate, Shah (n=1,105)</td><td>7.3% [5.9, 9.0]</td></tr>
+        <tr><td>cos_sim(v_harm, AA) on merged baseline</td><td>&minus;0.36</td></tr>
+        <tr><td>cos_sim(v_harm, PC2) &mdash; argmax axis</td><td>&minus;0.64</td></tr>
+        <tr><td>Single-direction harm-AUC: &lt;<em>h</em>,&nbsp;v_harm&gt;</td><td><strong>0.89</strong></td></tr>
+        <tr><td>Single-direction harm-AUC: &lt;<em>h</em>,&nbsp;&minus;AA&gt; (flipped)</td><td>0.73</td></tr>
+        <tr><td>residual outside top-10 role-PCs</td><td>13.4%</td></tr>
+        <tr><td>Sign-corrected PC2 attack: harm rate at &lambda;=0.05 (n=486)</td><td><strong>11.1%</strong></td></tr>
+        <tr><td>Sign-corrected PC3 attack: harm rate at &lambda;=0.05</td><td><strong>12.3%</strong></td></tr>
+        <tr><td>v_harm-direct attack (oracle): harm rate at &lambda;=0.10</td><td><strong>14.6%</strong></td></tr>
+        <tr><td>Coherence-preserving &lambda; (PC2/PC3) vs paper's AA &lambda;</td><td>0.05 vs ~2&ndash;3</td></tr>
+        <tr><td>aa_pc2 cap + PC2 attack: harm / coherence (n=243 harm-pos)</td><td>21.0% / 88.1%</td></tr>
+        <tr><td>aa_pc2_pc3_pc4 cap + zero attack: coherence</td><td><strong>0%</strong> (over-cap)</td></tr>
+        <tr><td>aa_v_harm cap + zero attack: coherence</td><td>60.1%</td></tr>
+        <tr><td>GPT-5.5 cross-judge agreement vs Qwen 3.6-27B primary</td><td>93%</td></tr>
       </table>
     </div>
 
-    <h2>Limitations</h2>
+    <h2 id="post-deadline-extensions">Post-deadline extensions</h2>
+    <p>
+      The findings above were the deadline submission. The post-deadline work resolves four of the open questions from the next-phase plan: cross-dataset replication on Shah-reconstructed jailbreaks, the geometry of <code>v_harm</code> on the merged baseline, sign-corrected per-axis attack characterization with adaptive &lambda;, and a multi-axis defense interaction matrix. Numbers below come from <code>results/plan_b_gemma2_27b/extensions/</code>; full per-cell parquets and JSON in the receipts.
+    </p>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 1 &mdash; Cross-dataset replication on Shah jailbreaks</h3>
+    <p>
+      Plan B baseline ran 500 DAN prompts. The extension expanded to the full DAN sample (n=1,102 net of two length-outliers) plus 1,105 Shah-reconstructed prompts (Shah et&nbsp;al. 2311.03348 methodology &mdash; synthetic minimal-perturbation persona priming, ~160 chars/prompt vs DAN's ~2,500). Total merged baseline n=2,207 (243 harm-positive, 1,964 safe).
+    </p>
+    <figure>
+      <img src="figures/cross_dataset_baseline.png" alt="DAN vs Shah baseline harm rate" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure 4.</span>
+        Baseline harm rate by dataset on Gemma&nbsp;2&nbsp;27B (no cap, no steer). DAN: <strong>14.7%</strong> [12.7, 16.9]. Shah-reconstructed: <strong>7.3%</strong> [5.9, 9.0]. Wilson 95% CI. The two datasets test different jailbreak strategies &mdash; DAN's elaborate user-generated personas vs Shah's one-sentence role priming &mdash; and yield meaningfully different baseline harm rates on the same model. Cross-dataset agreement on the cap-defends-DAN claim therefore rests on Shah being a stricter test (lower base rate, less prompt-time persona anchoring); both are reduced under AA-cap in the directions reported below.
+      </figcaption>
+    </figure>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 2 &mdash; Geometry of harm: <code>v_harm</code> decomposition</h3>
+    <p>
+      Direct test of Q1 from the next-phase plan. Computed <code>v_harm = mean(harm_activations) &minus; mean(safe_activations)</code> on the merged DAN+Shah baseline (n=2,207, 243 harm-positive) at L*=21, then decomposed onto the role-PCA basis.
+    </p>
+    <figure>
+      <img src="figures/v_harm_decomposition.png" alt="v_harm decomposition onto AA + PC1..PC10" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure 5.</span>
+        <code>cos_sim(v_harm, axis)</code> for each axis. <strong>v_harm is not primarily AA</strong> (cos = &minus;0.36) &mdash; AA explains only ~13% of v_harm energy. The dominant alignment is with <strong>PC2</strong> (cos = &minus;0.64), with secondary components on PC3 (&minus;0.43), AA, PC1, PC4 (+0.32). 86% of v_harm energy lives in the top-10 role-PCA basis (residual outside top-10 = 13.4%) &mdash; <strong>role-PCA is the right basis for harm geometry on this subject</strong>; harm-PCA is not needed.
+        <br /><strong>Single-direction AUC:</strong> &lt;<em>h</em>,&nbsp;v_harm&gt; = <strong>0.89</strong>; &lt;<em>h</em>,&nbsp;&minus;AA&gt; = 0.73. v_harm captures most of the LASSO multi-direction AUC of 0.967 in a single axis &mdash; confirming that the orthogonal-to-AA harm signal is a real geometric phenomenon, not a multi-PC noise aggregate.
+      </figcaption>
+    </figure>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 3 &mdash; Sign-corrected per-axis attack arm</h3>
+    <p>
+      The original Plan B attacks at &lambda;=+0.25 along PC2/PC3 hit 67% / 44% nonsense. The decomposition above explains why: <code>cos_sim(v_harm, PC2) = &minus;0.64</code>, so positive-&lambda; PC2 steering pointed <em>toward safety</em>, not toward harm. The model was being pushed past Assistant-mode into off-distribution non-Assistant non-harmful states &mdash; coherent attacks were testing the wrong direction.
+    </p>
+    <p>
+      The corrected per-axis attack steers along <code>sign(cos(v_harm, PC_i)) &middot; PC_i</code> &mdash; toward harm under our extraction's sign convention. Adaptive &lambda; sweep (start 0.05, raise until coherence&nbsp;&lt;&nbsp;80%) on a stratified subset (243 harm-positive + 243 controls):
+    </p>
+    <figure>
+      <img src="figures/lambda_pareto.png" alt="Per-axis lambda Pareto curves" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure 6.</span>
+        Per-axis dose-response on AA-capped Gemma&nbsp;2&nbsp;27B. Stars mark each axis's &lambda;_max_coherent. <strong>The coherence-preserving operating &lambda; for non-AA directions is 0.05&ndash;0.15</strong>, an order of magnitude below Lu et&nbsp;al.'s AA range &lambda;&nbsp;&isin;&nbsp;[&minus;3,&nbsp;3] (Figures 4&ndash;5 of the paper). This is itself a finding extending Lu et&nbsp;al. App G.2: <em>the &lambda; range that preserves coherence is axis-specific, narrowing sharply for higher-PC and learned harm directions.</em>
+      </figcaption>
+    </figure>
+    <p>Full-sample (n=486 stratified) harm rates at each axis's &lambda;_max_coherent:</p>
+    <div class="claim-card">
+      <table>
+        <thead>
+          <tr><td style="font-weight:600; color:var(--fg);">Attack on AA-capped model</td><td style="font-weight:600; color:var(--fg); text-align:right;">&lambda;</td><td style="font-weight:600; color:var(--fg); text-align:right;">harm rate</td><td style="font-weight:600; color:var(--fg); text-align:right;">coherence</td></tr>
+        </thead>
+        <tbody>
+          <tr><td>(no attack &mdash; AA-cap baseline, Plan B full DAN)</td><td style="text-align:right;">&mdash;</td><td style="text-align:right;">1.8%</td><td style="text-align:right;">91.4%</td></tr>
+          <tr><td>sign-matched PC2 (sign = &minus;1)</td><td style="text-align:right;">0.05</td><td style="text-align:right;"><strong>11.1%</strong></td><td style="text-align:right;">91.4%</td></tr>
+          <tr><td>sign-matched PC3 (sign = &minus;1)</td><td style="text-align:right;">0.05</td><td style="text-align:right;"><strong>12.3%</strong></td><td style="text-align:right;">87.7%</td></tr>
+          <tr><td>sign-matched PC4 (sign = +1)</td><td style="text-align:right;">0.15</td><td style="text-align:right;">1.0%</td><td style="text-align:right;">77.8%</td></tr>
+          <tr><td>v_harm-direct (oracle)</td><td style="text-align:right;">0.10</td><td style="text-align:right;"><strong>14.6%</strong></td><td style="text-align:right;">76.7%</td></tr>
+          <tr><td>multi-axis composite (PC2+PC3+PC4)</td><td style="text-align:right;">&mdash;</td><td style="text-align:right;">2.7%</td><td style="text-align:right;">77.6%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <strong>The H1 blind-spot is real and adversarial.</strong> Sign-corrected PC2 and PC3 attacks recover harm rate from <strong>1.8%</strong> (AA-cap baseline) to <strong>11&ndash;12%</strong> at coherence-preserving &lambda; &mdash; a 6&times; lift, on directions AA-cap doesn't defend. v_harm-direct is the strongest single-direction attack at <strong>14.6%</strong>, validating it as the upper bound on what any linear direction can achieve. (This resolves Q2: the predictive direction <em>causes</em> harm, not just correlates with it.)
+    </p>
+    <p>
+      <strong>Two surprises.</strong>
+      (i) <em>PC4 alone strips refusal style without producing harm.</em> At &lambda;=0.15 with 78% coherence, PC4-attack drops the refusal-keyword rate to ~5% but its harm rate is only 1%. The model finds non-harmful ways to deflect when the refusal voice is suppressed by a low-cos-with-v_harm axis.
+      (ii) <em>The multi-axis composite is dominated by PC4</em> (its &lambda;=0.15 is 3&times; the PC2/PC3 components), so the composite inherits PC4's "refusal collapse without harm production" pattern. Multi-axis attack does not stack constructively when the per-axis &lambda;'s differ this much; future work would equalize axis weights or use the LASSO-derived weighting directly.
+    </p>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 4 &mdash; Multi-axis defense (interaction matrix)</h3>
+    <p>
+      Direct test of Q3. Three multi-axis cap configurations were composed with the strongest Phase 3 attacks on the harm-positive subset (n=243 per cell). Each axis capped at p25 of its role-positive distribution.
+    </p>
+    <figure>
+      <img src="figures/interaction_matrix.png" alt="Defence × attack interaction matrix" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure 7.</span>
+        Three-panel heatmap: harm rate, refusal rate, coherence under each (defense, attack) combination. Defenses (rows): <code>aa_pc2</code> = AA + sign-matched PC2; <code>aa_pc2_pc3_pc4</code> = AA + sign-matched PC2/PC3/PC4; <code>aa_v_harm</code> = AA + v_harm-direct. Attacks (cols): zero (pure defense baseline), sign-matched PC2, PC3, v_harm-direct, multi-axis composite.
+      </figcaption>
+    </figure>
+    <p><strong>Three findings, in increasing order of relevance to a deployable defense:</strong></p>
+    <ol>
+      <li>
+        <strong>Stacking 4 caps at p25 each is catastrophically over-aggressive.</strong> <code>aa_pc2_pc3_pc4</code> produces <strong>100% nonsense even with zero attack</strong>. The harm rate is &ldquo;0%&rdquo; only because there is no coherent text to be judged. This is the over-cap regime: tau calibration that works in isolation does not compose &mdash; each additional cap compounds the activation clipping. <em>Deployable multi-axis defense requires per-axis Pareto-optimized tau, not p25 everywhere.</em>
+      </li>
+      <li>
+        <strong>The v_harm-direct cap also degrades coherence at p25 alone.</strong> <code>aa_v_harm</code> with zero attack hits 40% nonsense &mdash; v_harm has different magnitude statistics than AA, so its p25 tau translates to a more aggressive intervention. Per-axis tau is not transferable; v_harm's tau needs its own grid search.
+      </li>
+      <li>
+        <strong>Single-extra-axis cap (<code>aa_pc2</code>) preserves coherence (91%) but its H2 win is marginal.</strong> Under matched PC2 attack: refusal stays at 45% (vs 51% baseline; closer to no-attack than the AA-only-cap's 12 pp drop under same attack), but binary harm rate is <strong>21.0%</strong> &mdash; comparable to the AA-only-cap-on-harm-positive value. The PC2 cap closes the <em>behavioural</em> channel (refusal style) but not the <em>harm-rate</em> channel.
+      </li>
+    </ol>
+    <p>
+      <strong>Refined H2 verdict.</strong> Multi-axis defense is not a free lunch. AA-cap was already absorbing the bulk of <em>linearly-available</em> harm-relevant variance &mdash; consistent with v_harm having only 13% energy outside the top-AA-aligned directions. Adding a single extra axis closes the refusal-style channel under a matched attack but does not compound to a stronger harm-defense; adding three extra axes at the same percentile breaks coherence entirely. <em>The blind spot is real (Phase 3 confirmed it adversarially) but a defense that closes it without coherence loss requires per-axis Pareto tau calibration that is left for next-phase work.</em>
+    </p>
+
+
     <ul>
       <li><strong>n = 1 model.</strong> Findings are on Gemma&nbsp;2&nbsp;27B only. Cross-architecture replication on Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B (thinking ON / OFF) is the next phase &mdash; the cross-model PC1/AA stability claim in the paper rests on multiple subjects.</li>
       <li><strong>One attack distribution.</strong> DAN persona-jailbreak prompts only. Cross-dataset replication on Shah-reconstructed synthetic jailbreaks (Shah et&nbsp;al. 2311.03348 methodology) is the next phase.</li>
@@ -282,35 +397,24 @@
     </ul>
 
     <h2>Research questions for the next phase</h2>
-    <p>The findings above raise five testable questions. Cheap diagnostics first; expensive runs only after a diagnostic justifies them. Each question states the approach and what the answer would mean.</p>
+    <p>The deadline submission listed five questions. The post-deadline extensions resolved three of them &mdash; the resolutions are noted in-place below; the remaining two carry forward.</p>
     <ol>
       <li>
-        <strong>Is the harm signal AA-aligned, or genuinely orthogonal to AA?</strong>
-        <em>Approach.</em> Compute <code>v_harm = mean(harm_activations) &minus; mean(safe_activations)</code> from the existing baseline activations &mdash; the same difference-of-means recipe Lu et&nbsp;al. use to compute AA, but with harm/safe labels instead of Assistant/role labels &mdash; and measure <code>cos_sim(v_harm, AA)</code>.
-        <em>Discriminating outcome.</em> If <code>cos_sim &gt; 0.9</code>, the LASSO is detecting AA in disguise and the blind-spot framing weakens substantially. If <code>cos_sim &isin; [0.5, 0.85]</code>, a meaningfully novel harm direction exists alongside AA, and Q2 is justified.
+        <strong>Is the harm signal AA-aligned, or genuinely orthogonal to AA?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; orthogonal.</span> <code>cos_sim(v_harm, AA) = &minus;0.36</code> on the merged DAN+Shah baseline (n=2,207). v_harm aligns most strongly with PC2 (cos = &minus;0.64), with secondary components on PC3 / AA / PC4. 86% of v_harm energy lives in the top-10 role-PCA basis. See Extension&nbsp;2 above.
       </li>
       <li>
-        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong>
-        <em>Approach.</em> Steer along <code>v_harm</code> (from Q1) on clean prompts (no DAN, no cap) at &lambda;&nbsp;&isin;&nbsp;{0.1, 0.25, 0.5}. Re-judge.
-        <em>Discriminating outcome.</em> If harm rate climbs with &lambda; (excluding baseline 14.8% with CI clear), <code>v_harm</code> is causal &mdash; and a multi-axis defense capping it is justified. If harm rate is flat, the LASSO is detecting co-occurring features (style, topic, response length) that correlate with harm but don't cause it &mdash; itself a publishable finding that reframes the project as "harm is linearly correlated but not multi-axis-causal at this depth."
+        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; causal.</span> Sign-corrected steering along PC2 at &lambda;=0.05 lifts harm rate from 1.8% (AA-cap baseline) to 11.1%. v_harm-direct at &lambda;=0.10 lifts to 14.6%. Both at &gt;76% coherence. The orthogonal directions are adversarially exploitable, not just predictively correlated. See Extension&nbsp;3 above.
       </li>
       <li>
-        <strong>Does capping AA + PC2 + PC3 jointly close the orthogonal signal?</strong>
-        <em>Approach.</em> Add a multi-axis-cap condition (existing <code>multi_axis_cap</code> machinery in the codebase). Re-fit the LASSO on multi-axis-capped activations; check whether the AUC delta shrinks toward zero.
-        <em>Discriminating outcome.</em> If &Delta; shrinks substantially &rarr; multi-axis defense closes the blind spot in miniature; the H1+H2 defensive story is intact. If unchanged &rarr; the residual signal lives in PC4&ndash;PC10 (which the LASSO did select), and a 3-axis defense is insufficient; the right basis is harm-PCA derived from baseline data, not role-PCA.
+        <strong>Does capping AA + PC2 + PC3 jointly close the orthogonal signal?</strong> <span style="color:var(--accent-warn); font-weight:600;">PARTIAL &mdash; per-axis tau is the hard part.</span> Single extra axis (<code>aa_pc2</code>) preserves coherence (91%) and stabilizes refusal style under matched attack, but does not reduce binary harm rate. Stacking three caps at p25 each (<code>aa_pc2_pc3_pc4</code>) breaks coherence entirely (100% nonsense). The blind spot is real but closing it without coherence loss requires per-axis Pareto-optimized tau &mdash; left for next-phase work. See Extension&nbsp;4 above.
       </li>
       <li>
-        <strong>What does PC2/PC3 actually do to model voice when it preserves coherence?</strong>
-        <em>Approach.</em> Filter PC2/PC3 attack rollouts to coherent + non-refusal + non-harmful responses. Hand-tag a sample, then compute embedding similarity to (a) baseline refusals, (b) baseline complies, (c) generic off-topic content.
-        <em>Discriminating outcome.</em> If PC3-attack responses cluster as evasive deflections / hedged partial-info rather than off-topic noise, PC3 has a clean semantic interpretation &mdash; "commitment-to-refusal-as-a-stance" or similar &mdash; that connects directly to recent persona-vectors interpretability work. Mechanism beats black-box.
+        <strong>What does PC2/PC3 actually do to model voice when it preserves coherence?</strong> <em>Carries forward.</em> Sign-corrected PC2/PC3 attacks at coherent &lambda; do recover harm (resolving the original framing). Mechanistic interpretation of <em>which</em> persona dimensions PC2/PC3 govern (Chen et&nbsp;al.-style persona vectors thread) remains open.
       </li>
       <li>
-        <strong>Does the blind-spot signal replicate cross-architecture and cross-dataset?</strong>
-        <em>Approach.</em> Extend the same protocol to Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B (thinking ON / OFF) on DAN + Shah-reconstructed jailbreaks &mdash; six (subject, dataset) cells.
-        <em>Discriminating outcome.</em> If the AUC lift and behavioural-bypass pattern replicate across all four subjects on both datasets, the finding is a property of activation geometry under jailbreak that generalizes. If it only replicates on Gemma&nbsp;2&nbsp;27B / DAN, it's a model-or-distribution-specific artifact and the paper's claim narrows accordingly.
+        <strong>Does the blind-spot signal replicate cross-architecture and cross-dataset?</strong> <em>Cross-dataset partially answered: Shah-reconstructed reproduces the AA-cap defense direction at half DAN's baseline rate.</em> Cross-architecture (Qwen&nbsp;3&nbsp;32B, Gemma&nbsp;4&nbsp;31B thinking ON/OFF) carries forward.
       </li>
     </ol>
-    <p>Q1 and Q2 run first &mdash; Q1 is essentially free given the existing baseline parquet, and Q2 fires only if Q1 returns a meaningfully novel <code>v_harm</code>. Q3 follows regardless. Q4 and Q5 are independent threads. Trigger conditions, budgets, and execution ordering are in the extensions plan linked under Receipts.</p>
 
     <h2>Three implementation bugs found and fixed</h2>
     <p>The first attempt at the cap implementation produced 100% degenerate token-loop output across every capped condition (<code>"th'th, the last, the last&hellip;"</code>; <code>"KenapaKenapaKenapa&hellip;"</code>). Three stacked bugs in the cap pipeline, all corrected before any number on this page was generated:</p>

@@ -725,7 +725,9 @@ def step_7_assemble(
     ).round(3)
     _log(f"step 7: lambda_sweep.parquet rows={len(df)}")
     _log(f"\n{summary.to_string()}")
-    _mark_done(marker, {"n_rows": len(df), "summary": summary.to_dict()})
+    # Flatten MultiIndex tuple keys to "scope::condition_id" so the marker is JSON-serializable.
+    summary_flat = {f"{scope}::{cond}": row.to_dict() for (scope, cond), row in summary.iterrows()}
+    _mark_done(marker, {"n_rows": len(df), "summary": summary_flat})
     return out_path
 
 
