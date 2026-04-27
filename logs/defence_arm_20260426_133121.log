@@ -1,0 +1,21 @@
+[def_arm 13:31:21] config: configs/defence_arm.yaml; output_dir: results/plan_b_gemma2_27b/extensions/defence_arm
+/home/synaptic/data-science/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[def_arm 13:31:22] step 1: skipped (marker exists)
+[def_arm 13:31:22] step 3: filtered subset to harm-positive only, n=243 (was 486)
+[def_arm 13:31:22] step 3 [1/15] defence_aa_pc2_attack_zero (λ_atk=0.0)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 504, in <module>
+    main()
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 489, in main
+    paths = step_3_matrix(cfg, out_dir, setup)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 331, in step_3_matrix
+    steering = _build_defence_steering(
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 231, in _build_defence_steering
+    cap_vectors.append(setup["axis_files"][ax][layer])
+                       ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+KeyError: 33

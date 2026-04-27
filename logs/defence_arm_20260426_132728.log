@@ -1,0 +1,44 @@
+[def_arm 13:27:28] config: configs/defence_arm.yaml; output_dir: results/plan_b_gemma2_27b/extensions/defence_arm
+/home/synaptic/data-science/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[def_arm 13:27:29] step 1: chosen λ per axis from Phase 3: {'random_0': 0.05, 'random_1': 0.05, 'signmatched_pc2': 0.05, 'signmatched_pc3': 0.05, 'signmatched_pc4': 0.15, 'v_harm': 0.1}
+[def_arm 13:27:29] step 1: AA tau per layer = {33: 12204.326171875, 34: 8441.642578125, 35: 595.104248046875, 36: 579.2577514648438, 37: 4807.85107421875, 38: 426.5359191894531}
+[def_arm 13:27:29] step 1: signmatched_pc2 tau (p25): {33: 7766.3779296875, 34: 7868.734375, 35: 7967.8515625, 36: 8275.3603515625, 37: 8545.75, 38: 8854.5478515625}
+[def_arm 13:27:29] step 1: signmatched_pc3 tau (p25): {33: 456.36181640625, 34: 458.78411865234375, 35: 416.0386047363281, 36: 548.9525146484375, 37: 591.6318969726562, 38: 667.7574462890625}
+[def_arm 13:27:29] step 1: signmatched_pc4 tau (p25): {33: -4706.8759765625, 34: -4614.79541015625, 35: -4622.05615234375, 36: -4812.01904296875, 37: -4941.6748046875, 38: -5118.19384765625}
+[def_arm 13:27:29] step 1: v_harm tau (p25): {33: -4707.09375, 34: -4590.7197265625, 35: -4635.615234375, 36: -4821.17333984375, 37: -4928.11865234375, 38: -5187.83740234375}
+[def_arm 13:27:29] step 2: skipped — coherence check deferred to assembly-stage analysis (run defences first)
+[def_arm 13:27:29] step 3 [1/24] defence_aa_only_attack_zero (λ_atk=0.0)
+/home/synaptic/data-science/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/508 [00:00<?, ?it/s]Loading weights:   0%|          | 1/508 [00:00<01:37,  5.20it/s]Loading weights:   2%|▏         | 10/508 [00:00<00:12, 41.10it/s]Loading weights:   4%|▍         | 21/508 [00:00<00:07, 66.98it/s]Loading weights:   6%|▌         | 29/508 [00:00<00:06, 71.47it/s]Loading weights:   7%|▋         | 38/508 [00:00<00:06, 75.33it/s]Loading weights:  10%|▉         | 49/508 [00:00<00:05, 85.01it/s]Loading weights:  12%|█▏        | 60/508 [00:00<00:04, 91.95it/s]Loading weights:  14%|█▍        | 71/508 [00:00<00:04, 94.01it/s]Loading weights:  16%|█▌        | 82/508 [00:01<00:04, 96.33it/s]Loading weights:  18%|█▊        | 93/508 [00:01<00:04, 98.64it/s]Loading weights:  21%|██▏       | 108/508 [00:01<00:03, 113.17it/s]Loading weights:  24%|██▍       | 122/508 [00:01<00:03, 120.81it/s]Loading weights:  27%|██▋       | 135/508 [00:01<00:03, 113.67it/s]Loading weights:  29%|██▉       | 147/508 [00:01<00:03, 104.30it/s]Loading weights:  31%|███▏      | 159/508 [00:01<00:03, 99.84it/s] Loading weights:  33%|███▎      | 170/508 [00:01<00:03, 101.67it/s]Loading weights:  36%|███▌      | 181/508 [00:01<00:03, 101.90it/s]Loading weights:  38%|███▊      | 192/508 [00:02<00:03, 101.39it/s]Loading weights:  40%|███▉      | 203/508 [00:02<00:03, 100.98it/s]Loading weights:  42%|████▏     | 214/508 [00:02<00:02, 102.76it/s]Loading weights:  44%|████▍     | 225/508 [00:02<00:02, 104.37it/s]Loading weights:  46%|████▋     | 236/508 [00:02<00:02, 102.06it/s]Loading weights:  49%|████▊     | 247/508 [00:02<00:02, 102.75it/s]Loading weights:  52%|█████▏    | 264/508 [00:02<00:02, 121.09it/s]Loading weights:  55%|█████▍    | 277/508 [00:02<00:01, 121.35it/s]Loading weights:  57%|█████▋    | 290/508 [00:02<00:02, 107.85it/s]Loading weights:  59%|█████▉    | 302/508 [00:03<00:01, 104.05it/s]Loading weights:  62%|██████▏   | 313/508 [00:03<00:01, 105.30it/s]Loading weights:  64%|██████▍   | 327/508 [00:03<00:01, 114.54it/s]Loading weights:  67%|██████▋   | 339/508 [00:03<00:01, 109.83it/s]Loading weights:  69%|██████▉   | 351/508 [00:03<00:01, 112.53it/s]Loading weights:  71%|███████▏  | 363/508 [00:03<00:01, 113.48it/s]Loading weights:  74%|███████▍  | 375/508 [00:03<00:01, 114.63it/s]Loading weights:  76%|███████▋  | 388/508 [00:03<00:01, 110.34it/s]Loading weights:  79%|███████▊  | 400/508 [00:03<00:01, 107.59it/s]Loading weights:  81%|████████  | 412/508 [00:04<00:00, 103.74it/s]Loading weights:  84%|████████▍ | 428/508 [00:04<00:00, 117.90it/s]Loading weights:  87%|████████▋ | 440/508 [00:04<00:00, 117.67it/s]Loading weights:  89%|████████▉ | 454/508 [00:04<00:00, 114.53it/s]Loading weights:  92%|█████████▏| 466/508 [00:04<00:00, 106.93it/s]Loading weights:  94%|█████████▍| 478/508 [00:04<00:00, 102.60it/s]Loading weights:  96%|█████████▋| 489/508 [00:04<00:00, 104.37it/s]Loading weights:  99%|█████████▉| 503/508 [00:04<00:00, 113.95it/s]Loading weights: 100%|██████████| 508/508 [00:04<00:00, 104.04it/s]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 362, in <module>
+    main()
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 338, in main
+    n_rows, tps = _run_hf(args)
+                  ^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 265, in _run_hf
+    cm = _build_steering_contexts(model, steering)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 165, in _build_steering_contexts
+    vecs = [_load_vec(p) for p in steering["vectors"]]
+                                  ~~~~~~~~^^^^^^^^^^^
+KeyError: 'vectors'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 486, in <module>
+    main()
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 471, in main
+    paths = step_3_matrix(cfg, out_dir, setup)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/experiments/defence_arm.py", line 316, in step_3_matrix
+    res = run_in_subprocess(
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/synaptic/data-science/research/multi-axis-persona-safety/src/utils/model_runner.py", line 136, in run_in_subprocess
+    raise WorkModuleError(
+src.utils.model_runner.WorkModuleError: work_module=src.evaluation.run_subject_rollouts exited with code 1 after 15.2s. Args at results/plan_b_gemma2_27b/extensions/defence_arm/.step3_defence_aa_only_attack_zero.work.args.json; output expected at results/plan_b_gemma2_27b/extensions/defence_arm/.step3_defence_aa_only_attack_zero.work.json.
