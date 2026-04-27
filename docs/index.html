@@ -416,15 +416,6 @@
       </li>
     </ol>
 
-    <h2>Three implementation bugs found and fixed</h2>
-    <p>The first attempt at the cap implementation produced 100% degenerate token-loop output across every capped condition (<code>"th'th, the last, the last&hellip;"</code>; <code>"KenapaKenapaKenapa&hellip;"</code>). Three stacked bugs in the cap pipeline, all corrected before any number on this page was generated:</p>
-    <ol>
-      <li><strong>Sign convention.</strong> Lu et&nbsp;al.'s upstream <code>_apply_cap</code> is a ceiling on a <em>role-positive</em> direction (their published Qwen capping vectors are named <code>contrast_role_pos3_default1</code>); our locally computed AA was <em>Assistant-positive</em> per the standard contrast-vector recipe (<code>cos_sim</code> with the published Qwen capping vector at L=0 was &minus;1.0000). Composing them pushed Assistant activations <em>away</em> from Assistant &mdash; anti-defense. <em>Fix:</em> negate cap vectors inside the steerer config.</li>
-      <li><strong>Tau calibration sign.</strong> &tau; was the 25th percentile of role-rollout projections on +AA, but the cap operator (after the sign flip) reads <code>&lt;h, &minus;AA&gt;</code>, so the comparison sign was wrong: cap never fired. <em>Fix:</em> &tau;_role&nbsp;=&nbsp;&minus;p75 of the existing +AA calibration, mathematically equivalent to p25 in the role-positive distribution.</li>
-      <li><strong>Capping at the wrong depth.</strong> The original fallback (offset L*+6, width 8) sat at 50&ndash;65% of model depth on a model the paper does not publish a cap range for. The paper's Qwen and Llama caps both sit at 70&ndash;83% depth. <em>Fix:</em> relocate to layers&nbsp;[33,&nbsp;38] at 71.7&ndash;82.6% depth, proportionally matching the Qwen convention.</li>
-    </ol>
-    <p>The full bug analysis &mdash; evidence, alternatives considered, reversibility &mdash; is in the decisions log linked under Receipts.</p>
-
     <h2>Receipts</h2>
     <p>The repository is structured to be auditable end-to-end. Plan and decisions documents track research judgment over time so any methodological choice on this page can be traced back to its motivation.</p>
     <div class="receipts">
