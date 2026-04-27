@@ -166,7 +166,7 @@
       Single-subject experiment &middot; Gemma&nbsp;2&nbsp;27B &middot; DAN&nbsp;+&nbsp;Shah-reconstructed jailbreak prompts (merged baseline n=2,207) &middot;
       <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
       <br />
-      <em>Plan B (deadline submission) results in the first half; <a href="#post-deadline-extensions">post-deadline extensions</a> at the bottom (cross-dataset replication, v_harm geometry, sign-corrected attack arm, multi-axis defense interaction matrix).</em>
+      <em>Initial single-axis cap analysis in the first half; <a href="#follow-up-findings">follow-up findings</a> at the bottom (cross-dataset replication, v_harm geometry, sign-corrected attack arm, multi-axis defense interaction matrix).</em>
     </p>
 
     <h2>Why this work</h2>
@@ -289,14 +289,14 @@
       </table>
     </div>
 
-    <h2 id="post-deadline-extensions">Post-deadline extensions</h2>
+    <h2 id="follow-up-findings">Follow-up findings</h2>
     <p>
-      The findings above were the deadline submission. The post-deadline work resolves four of the open questions from the next-phase plan: cross-dataset replication on Shah-reconstructed jailbreaks, the geometry of <code>v_harm</code> on the merged baseline, sign-corrected per-axis attack characterization with adaptive &lambda;, and a multi-axis defense interaction matrix. Numbers below come from <code>results/plan_b_gemma2_27b/extensions/</code>; full per-cell parquets and JSON in the receipts.
+      The findings above are the single-axis result. The follow-up work resolves four of the open questions raised by it: cross-dataset replication on Shah-reconstructed jailbreaks, the geometry of <code>v_harm</code> on the merged baseline, sign-corrected per-axis attack characterization with adaptive &lambda;, and a multi-axis defense interaction matrix. Numbers below come from <code>results/plan_b_gemma2_27b/extensions/</code>; full per-cell parquets and JSON in the receipts.
     </p>
 
-    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 1 &mdash; Cross-dataset replication on Shah jailbreaks</h3>
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Cross-dataset replication on Shah jailbreaks</h3>
     <p>
-      Plan B baseline ran 500 DAN prompts. The extension expanded to the full DAN sample (n=1,102 net of two length-outliers) plus 1,105 Shah-reconstructed prompts (Shah et&nbsp;al. 2311.03348 methodology &mdash; synthetic minimal-perturbation persona priming, ~160 chars/prompt vs DAN's ~2,500). Total merged baseline n=2,207 (243 harm-positive, 1,964 safe).
+      The initial baseline ran 500 DAN prompts. The follow-up expanded to the full DAN sample (n=1,102 net of two length-outliers) plus 1,105 Shah-reconstructed prompts (Shah et&nbsp;al. 2311.03348 methodology &mdash; synthetic minimal-perturbation persona priming, ~160 chars/prompt vs DAN's ~2,500). Total merged baseline n=2,207 (243 harm-positive, 1,964 safe).
     </p>
     <figure>
       <img src="figures/cross_dataset_baseline.png" alt="DAN vs Shah baseline harm rate" loading="lazy" style="max-width:100%; height:auto;" />
@@ -306,7 +306,7 @@
       </figcaption>
     </figure>
 
-    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 2 &mdash; Geometry of harm: <code>v_harm</code> decomposition</h3>
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Geometry of harm: <code>v_harm</code> decomposition</h3>
     <p>
       Direct test of Q1 from the next-phase plan. Computed <code>v_harm = mean(harm_activations) &minus; mean(safe_activations)</code> on the merged DAN+Shah baseline (n=2,207, 243 harm-positive) at L*=21, then decomposed onto the role-PCA basis.
     </p>
@@ -319,9 +319,9 @@
       </figcaption>
     </figure>
 
-    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 3 &mdash; Sign-corrected per-axis attack arm</h3>
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Sign-corrected per-axis attack arm</h3>
     <p>
-      The original Plan B attacks at &lambda;=+0.25 along PC2/PC3 hit 67% / 44% nonsense. The decomposition above explains why: <code>cos_sim(v_harm, PC2) = &minus;0.64</code>, so positive-&lambda; PC2 steering pointed <em>toward safety</em>, not toward harm. The model was being pushed past Assistant-mode into off-distribution non-Assistant non-harmful states &mdash; coherent attacks were testing the wrong direction.
+      The earlier attacks at &lambda;=+0.25 along PC2/PC3 hit 67% / 44% nonsense. The decomposition above explains why: <code>cos_sim(v_harm, PC2) = &minus;0.64</code>, so positive-&lambda; PC2 steering pointed <em>toward safety</em>, not toward harm. The model was being pushed past Assistant-mode into off-distribution non-Assistant non-harmful states &mdash; coherent attacks were testing the wrong direction.
     </p>
     <p>
       The corrected per-axis attack steers along <code>sign(cos(v_harm, PC_i)) &middot; PC_i</code> &mdash; toward harm under our extraction's sign convention. Adaptive &lambda; sweep (start 0.05, raise until coherence&nbsp;&lt;&nbsp;80%) on a stratified subset (243 harm-positive + 243 controls):
@@ -340,7 +340,7 @@
           <tr><td style="font-weight:600; color:var(--fg);">Attack on AA-capped model</td><td style="font-weight:600; color:var(--fg); text-align:right;">&lambda;</td><td style="font-weight:600; color:var(--fg); text-align:right;">harm rate</td><td style="font-weight:600; color:var(--fg); text-align:right;">coherence</td></tr>
         </thead>
         <tbody>
-          <tr><td>(no attack &mdash; AA-cap baseline, Plan B full DAN)</td><td style="text-align:right;">&mdash;</td><td style="text-align:right;">1.8%</td><td style="text-align:right;">91.4%</td></tr>
+          <tr><td>(no attack &mdash; AA-cap baseline, initial 500-prompt DAN run)</td><td style="text-align:right;">&mdash;</td><td style="text-align:right;">1.8%</td><td style="text-align:right;">91.4%</td></tr>
           <tr><td>sign-matched PC2 (sign = &minus;1)</td><td style="text-align:right;">0.05</td><td style="text-align:right;"><strong>11.1%</strong></td><td style="text-align:right;">91.4%</td></tr>
           <tr><td>sign-matched PC3 (sign = &minus;1)</td><td style="text-align:right;">0.05</td><td style="text-align:right;"><strong>12.3%</strong></td><td style="text-align:right;">87.7%</td></tr>
           <tr><td>sign-matched PC4 (sign = +1)</td><td style="text-align:right;">0.15</td><td style="text-align:right;">1.0%</td><td style="text-align:right;">77.8%</td></tr>
@@ -358,7 +358,7 @@
       (ii) <em>The multi-axis composite is dominated by PC4</em> (its &lambda;=0.15 is 3&times; the PC2/PC3 components), so the composite inherits PC4's "refusal collapse without harm production" pattern. Multi-axis attack does not stack constructively when the per-axis &lambda;'s differ this much; future work would equalize axis weights or use the LASSO-derived weighting directly.
     </p>
 
-    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Extension 4 &mdash; Multi-axis defense (interaction matrix)</h3>
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Multi-axis defense (interaction matrix)</h3>
     <p>
       Direct test of Q3. Three multi-axis cap configurations were composed with the strongest Phase 3 attacks on the harm-positive subset (n=243 per cell). Each axis capped at p25 of its role-positive distribution.
     </p>
@@ -397,7 +397,7 @@
     </ul>
 
     <h2>Research questions for the next phase</h2>
-    <p>The deadline submission listed five questions. The post-deadline extensions resolved three of them &mdash; the resolutions are noted in-place below; the remaining two carry forward.</p>
+    <p>The single-axis result raised five questions. The follow-up findings resolved three of them &mdash; the resolutions are noted in-place below; the remaining two carry forward.</p>
     <ol>
       <li>
         <strong>Is the harm signal AA-aligned, or genuinely orthogonal to AA?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; orthogonal.</span> <code>cos_sim(v_harm, AA) = &minus;0.36</code> on the merged DAN+Shah baseline (n=2,207). v_harm aligns most strongly with PC2 (cos = &minus;0.64), with secondary components on PC3 / AA / PC4. 86% of v_harm energy lives in the top-10 role-PCA basis. See Extension&nbsp;2 above.
