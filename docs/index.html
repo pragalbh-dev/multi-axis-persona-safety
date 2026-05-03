@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Multi-Axis Persona Safety — Gemma 2 27B blind-spot demonstration</title>
-  <meta name="description" content="Replicating Lu et al.'s Assistant-Axis activation cap on Gemma 2 27B and asking whether the residual stream still encodes harm-relevant signal in directions the cap ignores. Single-subject experiment, DAN persona-jailbreaks, n=500." />
+  <title>Multi-Axis Persona Safety — a four-model study of the Assistant-Axis cap defense</title>
+  <meta name="description" content="Replicating Lu et al.'s Assistant-Axis activation cap on four open-weight models — Gemma 2 27B, Qwen 3 32B, and Gemma 4 31B with extended-reasoning mode on and off. The orthogonal-to-Assistant-direction harm signal replicates universally; defense robustness varies sharply across models, and on one model the cap fails outright and is adversarially exploited for a +12-point harm-rate increase at near-perfect coherence." />
   <style>
     :root {
       --fg: #1a1a1a;
@@ -160,42 +160,182 @@
 <body>
   <main>
     <h1>Multi-Axis Persona Safety</h1>
-    <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on Gemma&nbsp;2&nbsp;27B &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores.</p>
+    <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on four open-weight models &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores. The signal replicates universally; defense robustness does not &mdash; on one model the cap fails outright at zero attack and is adversarially exploited for a &plus;12-point harm-rate increase at near-perfect coherence.</p>
 
     <p class="meta">
-      Single-subject experiment &middot; Gemma&nbsp;2&nbsp;27B &middot; DAN&nbsp;+&nbsp;Shah-reconstructed jailbreak prompts (merged baseline n=2,207) &middot;
+      Four open-weight models &middot; Gemma&nbsp;2&nbsp;27B, Qwen&nbsp;3&nbsp;32B, Gemma&nbsp;4&nbsp;31B (with extended-reasoning mode on and off) &middot; DAN&nbsp;+&nbsp;Shah-reconstructed jailbreak prompts &middot;
       <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
       <br />
-      <em>Initial single-axis cap analysis in the first half; <a href="#follow-up-findings">follow-up findings</a> at the bottom (cross-dataset replication, v_harm geometry, sign-corrected attack arm, multi-axis defense interaction matrix).</em>
+      Jump to: <a href="#what-replicates">what replicates across all four models</a> &middot; <a href="#where-they-diverge">where the four models diverge</a> &middot; <a href="#deep-dive-gemma2">deep dive on Gemma 2 27B</a> &middot; <a href="#follow-up-findings">extension findings</a>.
     </p>
 
     <h2>Why this work</h2>
     <p>
-      Lu et&nbsp;al. (<a href="https://arxiv.org/abs/2601.10387">arXiv 2601.10387</a>, <em>The Assistant Axis</em>) propose a single-direction activation-level defense for persona jailbreaks. They identify a direction in the residual stream &mdash; the Assistant Axis (AA), &approx;&nbsp;PC1 of a 275-role activation PCA &mdash; and show that capping the projection of activations along AA reduces harmful-information extraction across multiple frontier open-weight models.
+      Lu et&nbsp;al. (<a href="https://arxiv.org/abs/2601.10387">arXiv 2601.10387</a>, <em>The Assistant Axis</em>) propose a single-direction activation-level defense for persona jailbreaks. They identify a direction in the residual stream &mdash; the Assistant Axis (AA), &approx;&nbsp;PC1 of a 275-role activation PCA &mdash; and show that capping the projection of activations along AA reduces harmful-information extraction across several frontier open-weight models.
     </p>
     <p>
-      The open question this work asks: <strong>does the residual stream under jailbreak still encode harm-relevant information in directions orthogonal to AA?</strong> If yes, the single-axis cap has a structural blind spot &mdash; it can be defeated by an adaptive adversary steering along the orthogonal directions, and a defense that closes the blind spot would need to be multi-dimensional. If no, the linear-safety hypothesis holds in this setting and PC1/AA is sufficient.
+      The open questions this work asks: <strong>does the residual stream under jailbreak still encode harm-relevant information in directions orthogonal to the Assistant direction, and does that pattern travel across models, architectures, and reasoning configurations?</strong> If the orthogonal signal is real and adversarially exploitable, the single-axis cap has a structural blind spot &mdash; it can be defeated by an attacker steering along the directions the cap ignores. If the picture is uniform across models, defense recommendations transfer cleanly; if it is heterogeneous, a deployable defense needs to know which regime it is in.
     </p>
 
     <h2>Pipeline validation</h2>
-    <p>Before reporting findings beyond the paper, four checks confirm this is a faithful instance of Lu et&nbsp;al.'s methodology:</p>
+    <p>Before reporting findings beyond the paper, four checks confirm this is a faithful instance of Lu et&nbsp;al.'s methodology on each of the four models:</p>
     <ul>
-      <li><strong>PC1 &approx; AA replicates.</strong> <code>cos_sim(PC1, AA)</code> at the extraction layer L*=21 is <strong>0.88</strong>; paper's threshold for the cross-model PC1/AA validation is 0.71 (Appendix line ~96). PC1 is fit on the paper's own released 275-role vector cache; AA is computed from this run's 30 rollouts &times; 280 roles using the contrast-vector recipe (<code>mean(default_assistant) &minus; mean(role_playing)</code>) per paper &sect;3.1.</li>
-      <li><strong>The cap defense replicates direction.</strong> AA capping drops binary harm rate from <strong>14.8% &rarr; 1.8%</strong> on n=500 DAN prompts on Gemma&nbsp;2&nbsp;27B &mdash; a model the paper does not publish a capping configuration for, but for which the direction of effect matches the published Qwen&nbsp;3&nbsp;32B and Llama&nbsp;3.3&nbsp;70B reductions in &sect;5.</li>
-      <li><strong>Coherence is preserved.</strong> 91% of capped responses are intelligible (8.6% judged <code>nonsensical</code>; baseline is 0.2%). The cap is operating in-distribution rather than destroying the model.</li>
-      <li><strong>Harm-judge protocol matches the paper verbatim.</strong> Nine-category prompt from Appendix D.2.2; binarization rule (<code>enough_info &cup; enough_info_and_follow_perfectly &rarr; harm=1</code>) per the paper. Judge model is Qwen&nbsp;3.6&nbsp;27B (in place of paper's <code>deepseek-v3</code> per project budget; cross-judge validation is part of the next phase).</li>
+      <li><strong>PC1 &approx; the Assistant direction replicates on every model tested.</strong> Paper's cross-model threshold for PC1/Assistant-direction agreement is 0.71. Per-model values: Gemma&nbsp;2&nbsp;27B <strong>0.88</strong>, Qwen&nbsp;3&nbsp;32B <strong>0.90</strong>, Gemma&nbsp;4&nbsp;31B reasoning-off <strong>0.82</strong>, Gemma&nbsp;4&nbsp;31B reasoning-on <strong>0.82</strong>. PCs are fit on each model's own role-vector cache; the Assistant direction is computed via the contrast-vector recipe (<code>mean(default_assistant) &minus; mean(role_playing)</code>) per paper &sect;3.1.</li>
+      <li><strong>The cap defense replicates direction on three of four models.</strong> The Assistant-direction cap reduces baseline harm rate by 13.0&nbsp;pp on Gemma&nbsp;2&nbsp;27B, 6.2&nbsp;pp on Qwen&nbsp;3&nbsp;32B, and 9.9&nbsp;pp on Gemma&nbsp;4&nbsp;31B with reasoning on. The exception &mdash; Gemma&nbsp;4&nbsp;31B with reasoning off, where the cap slightly increases harm at zero attack &mdash; is the headline divergence and is detailed below.</li>
+      <li><strong>Coherence is preserved at the operating point.</strong> Across the four models, the Assistant-direction-capped models retain 87&ndash;100% coherent (non-nonsense) outputs at the operating threshold, with no model in the catastrophic-coherence-loss regime that would degrade harm-rate measurements.</li>
+      <li><strong>Harm-judge protocol matches the paper verbatim.</strong> Nine-category prompt from Appendix D.2.2; binarization rule (<code>enough_info &cup; enough_info_and_follow_perfectly &rarr; harm=1</code>) per the paper. Judge model is Qwen&nbsp;3.6&nbsp;27B (in place of paper's <code>deepseek-v3</code> per project budget); validated against GPT-5.5 on a 200-sample stratified subset of the Gemma&nbsp;2&nbsp;27B run at 93% binary agreement (paper's reference is 91.6% deepseek-v3-vs-human).</li>
     </ul>
+    <figure>
+      <iframe src="figures/cross_model_pipeline.html" height="500" loading="lazy" title="Pipeline validation across four models"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;P.</span>
+        Pipeline validation across the four models &mdash; baseline harm rate, refusal rate, and harm-prediction AUC for the Assistant-direction-only baseline vs. the Assistant-direction&nbsp;+&nbsp;leading-persona-PC LASSO. Hover for exact values.
+      </figcaption>
+    </figure>
 
-    <h2>What this run found</h2>
+    <h2>What this study found</h2>
     <div class="tldr">
-      Three findings, in order of how strongly they survive scrutiny:
+      Three findings across the four models:
       <ol style="margin: 12px 0 0; padding-left: 22px;">
-        <li><strong>The defense replicates.</strong> AA-capping drops binary harm rate from 14.8% to 1.8% on n=500 DAN prompts (BCa 95% CI on the difference excludes zero). The cap works as Lu et&nbsp;al. describe, on a model they did not publish numbers for.</li>
-        <li><strong>The activations encode a harm signal in directions orthogonal to AA.</strong> A logistic LASSO over <code>{AA, PC1..PC10}</code> at L*=21 lifts harm-prediction AUC from <strong>0.728</strong> (AA alone) to <strong>0.967</strong> (&Delta;&nbsp;=&nbsp;<strong>+0.240</strong>, BCa 95% CI [+0.209,&nbsp;+0.273], excludes zero). Eight of the top-ten role-PCs are selected: PC2, 3, 4, 5, 7, 8, 9, 10. PC1 is <em>not</em> selected &mdash; direct empirical confirmation of the paper's PC1&nbsp;&approx;&nbsp;AA claim, since AA is already a separate feature in this regression.</li>
-        <li><strong>PC2/PC3 attacks at a coherence-preserving steering magnitude do not extract harmful information &mdash; but they collapse the cap's refusal pattern.</strong> At &lambda;=0.25 (calibrated on Gemma&nbsp;2&nbsp;27B residual norms), neither PC2 nor PC3 attack produces any judged-harmful response. But refusal-keyword incidence under cap drops from <strong>79%</strong> (cap alone) to <strong>18%</strong> (+PC2) and <strong>4%</strong> (+PC3) on the full sample &mdash; or <strong>86% &rarr; 55% &rarr; 6%</strong> when adjusted for coherence loss under steering.</li>
+        <li><strong>The orthogonal-to-Assistant-direction harm signal replicates across all four models.</strong> Adding the leading persona principal components to a logistic LASSO lifts harm-prediction AUC by <strong>+0.10 to +0.31</strong> over the Assistant-direction-alone baseline; every 95% BCa CI excludes zero. The blind spot Lu et&nbsp;al.'s single-direction cap leaves behind is a general feature, not a Gemma&nbsp;2&nbsp;27B artifact.</li>
+        <li><strong>The cap defends in three of four models &mdash; and outright fails in the fourth.</strong> On Gemma&nbsp;4&nbsp;31B with reasoning off, the Assistant-direction cap <em>increases</em> harm at zero attack (10.2% &rarr; 11.2%) and a single harm-aligned principal-component attack lifts harm to <strong>23.6%</strong> at <strong>99.8% coherence</strong> &mdash; a +12.4 percentage-point adversarial recovery on the headline mitigation. Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B with reasoning on resist all attacks tested at coherence-preserving steering magnitudes. The number of LASSO-selected components does not predict robustness (reasoning-on selects nine components and defends; reasoning-off selects one and fails).</li>
+        <li><strong>Extended reasoning reorganizes the safety geometry.</strong> With reasoning on, the probe layer where role information is most linearly separable shifts from middle depth (~20%) to the network's final layer (98% depth); the Assistant direction alone becomes a much stronger harm classifier (AUC 0.81 vs 0.58 with reasoning off); and the empirical harm direction becomes substantially aligned with the Assistant direction (cos = +0.56) where it is near-orthogonal in the other three models (cos &isin; [&minus;0.36, +0.13]).</li>
       </ol>
-      <p style="margin: 14px 0 0;">The refined claim: at the coherence-preserving attack magnitudes tested here, the cap's <em>binary harm</em> defense holds, but the cap's <em>behavioural signature</em> &mdash; its Assistant-style refusal voice &mdash; does not. The activation manifold under cap still encodes a measurable harm signal that AA-only capping does not access.</p>
+      <p style="margin: 14px 0 0;">The takeaway: the orthogonal-to-Assistant-direction blind spot is a general feature of role-conditioned residual streams, not a single-model artifact &mdash; but defense behaviour around it is heterogeneous, and a recommendation that holds on three of four models can fail on a fourth in a way that is not just incomplete but adversarially exploitable.</p>
     </div>
+
+    <h2 id="what-replicates">What replicates across all four models</h2>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">The orthogonal harm signal is universal</h3>
+    <p>
+      Across the four models, fitting a logistic LASSO over <code>{Assistant-direction, top-10 persona PCs}</code> at each model's probe layer yields a harm-prediction AUC strictly greater than the Assistant-direction-alone baseline. Lifts range from <strong>+0.10</strong> on Gemma&nbsp;4&nbsp;31B with reasoning on (the smallest gap) to <strong>+0.31</strong> on Qwen&nbsp;3&nbsp;32B (the largest), with 95% BCa CIs excluding zero on every model. The blind spot Lu et&nbsp;al.'s single-direction cap leaves behind is a general feature of role-conditioned residual streams.
+    </p>
+    <figure>
+      <iframe src="figures/cross_model_auc_lift.html" height="560" loading="lazy" title="Cross-model AUC lift"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;A.</span>
+        Harm-prediction AUC per model: the Assistant direction alone (grey) versus the Assistant direction combined with the leading persona principal components in a nested-CV logistic LASSO (blue). Hover for the LASSO-selected components per model. Δ values are the AUC lift; every 95% BCa CI on the lift excludes zero.
+      </figcaption>
+    </figure>
+    <p>
+      Per-model details: Qwen&nbsp;3&nbsp;32B sits at AUC&nbsp;0.628&nbsp;&rarr;&nbsp;0.930 (lift&nbsp;+0.312, CI [+0.214,&nbsp;+0.415]; LASSO selects PC3&ndash;PC8). Gemma&nbsp;4&nbsp;31B with reasoning off sits at 0.576&nbsp;&rarr;&nbsp;0.866 (lift&nbsp;+0.295, CI [+0.191,&nbsp;+0.406]; LASSO selects PC4 alone). Gemma&nbsp;4&nbsp;31B with reasoning on sits at 0.813&nbsp;&rarr;&nbsp;0.905 (lift&nbsp;+0.101, CI [+0.051,&nbsp;+0.155]; LASSO selects PC2&ndash;PC10). Gemma&nbsp;2&nbsp;27B from the original study sits at 0.728&nbsp;&rarr;&nbsp;0.967 (lift&nbsp;+0.240, CI [+0.209,&nbsp;+0.273]; LASSO selects PC2,&nbsp;3,&nbsp;4,&nbsp;5,&nbsp;7,&nbsp;8,&nbsp;9,&nbsp;10).
+    </p>
+    <figure>
+      <img src="figures/per_model_lasso_pcs.png" alt="LASSO-selected persona PCs per model" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;B.</span>
+        Which persona principal components each model's LASSO selects. The number of selected components ranges from one (reasoning-off) to nine (reasoning-on). As shown below, this does not track defense robustness &mdash; reasoning-on selects nine and defends; reasoning-off selects one and fails.
+      </figcaption>
+    </figure>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">The cap defends in three of four models</h3>
+    <p>
+      Capping projections along the Assistant direction at the role-positive 25th percentile reduces baseline harm rate on three of four models &mdash; by <strong>13.0&nbsp;pp</strong> on Gemma&nbsp;2&nbsp;27B (14.8% &rarr; 1.8%), <strong>6.2&nbsp;pp</strong> on Qwen&nbsp;3&nbsp;32B (8.6% &rarr; 2.4%), and <strong>9.9&nbsp;pp</strong> on Gemma&nbsp;4&nbsp;31B with reasoning on (15.0% &rarr; 5.1%). On the same three models, all harm-aligned principal-component and empirical-harm-direction attacks tested at coherence-preserving steering magnitudes recover at most +1.4&nbsp;pp above the defended baseline. The fourth model, Gemma&nbsp;4&nbsp;31B with reasoning off, is the exception &mdash; flagged below.
+    </p>
+    <figure>
+      <iframe src="figures/cross_model_attack_recovery.html" height="600" loading="lazy" title="Cross-model attack recovery"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;C.</span>
+        For each model, three bars: undefended baseline harm rate (grey), harm rate after the Assistant-direction cap (green), and harm rate when the defended model is then steered along its strongest harm-aligned direction (red). Hover reveals the attack identity, λ, and coherence rate. The Gemma&nbsp;4&nbsp;31B reasoning-off column is the only one where the defended bar is taller than the undefended bar.
+      </figcaption>
+    </figure>
+
+    <h2 id="where-they-diverge">Where the four models diverge</h2>
+
+    <div style="border-left: 4px solid var(--accent-warn); padding: 6px 18px; background: #fff8f7; border-radius: 4px; margin-top: 24px;">
+      <h3 style="text-transform:none; color:var(--accent-warn); font-size:18px; margin-top:8px;">Gemma 4 31B with reasoning off &mdash; the cap fails and is exploitable</h3>
+      <p>
+        Two failures stack on this model. First, applying the Assistant-direction cap at the role-positive 25th percentile pushes binary harm rate from <strong>10.2% to 11.2%</strong> &mdash; a 1.0&nbsp;pp <em>increase</em> at zero attack. The defense paper's headline mitigation slightly worsens harm on this model. Second, on the cap-defended model, a single harm-aligned principal-component attack recovers harm decisively: steering along the harm-aligned direction of PC3 at λ=0.25 lifts harm to <strong>23.6%</strong> at <strong>99.8% coherence</strong> &mdash; +12.4 percentage points above the defended baseline, with the model continuing to produce coherent, on-topic, in-distribution responses while being adversarially driven past the defense. A null-space attack at the same λ reaches 18.7% at 99.0% coherence (+7.5&nbsp;pp).
+      </p>
+      <figure>
+        <iframe src="figures/thinking_off_attack_breakdown.html" height="540" loading="lazy" title="Per-attack breakdown on the failure model"></iframe>
+        <figcaption>
+          <span class="figlabel">Figure&nbsp;D.</span>
+          Every attack class tested on the cap-defended Gemma&nbsp;4&nbsp;31B (reasoning off). The dashed green line is the defended baseline (11.2%); the dotted grey line is the undefended baseline (10.2%). Bars above the green line indicate adversarial harm recovery; the harm-aligned PC3 attack and the null-space attack both clear it at near-perfect coherence.
+        </figcaption>
+      </figure>
+      <p>
+        A non-obvious property of this failure: the LASSO selected only <strong>PC4</strong> as a non-zero feature on this model, yet the most successful attack steers along <strong>PC3</strong>. Predictive feature selection and adversarial exploitability are dissociable here &mdash; carried forward as Q6 below.
+      </p>
+    </div>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:32px;">Gemma 4 31B with reasoning on &mdash; different geometry, same conclusion</h3>
+    <p>
+      Same model weights as above, with extended-reasoning mode toggled on. Three things change. First, the probe layer where role information is most linearly separable shifts from layer 14 of 60 (~23% depth) to layer 59 of 60 (98% depth) &mdash; effectively the network's final layer.
+    </p>
+    <figure>
+      <img src="figures/cross_model_probe_depth.png" alt="Probe layer depth per model" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;E.</span>
+        Probe layer per model, expressed as a fraction of network depth. Three of four models place the probe layer in the lower-to-middle network depth band; Gemma&nbsp;4&nbsp;31B with reasoning on is the outlier at 98%.
+      </figcaption>
+    </figure>
+    <p>
+      Second, the Assistant direction alone becomes a much stronger harm classifier on this model &mdash; AUC&nbsp;0.81 vs.&nbsp;0.58 with reasoning off &mdash; and the residual blind spot shrinks correspondingly (lift +0.10 vs +0.30 with reasoning off). Third, the empirical harm direction (the difference of mean activations between harm-positive and harm-negative prompts at the probe layer) becomes substantially aligned with the Assistant direction (cos = +0.56), where it is near-orthogonal in the other three models.
+    </p>
+    <figure>
+      <img src="figures/cross_model_v_harm_alignment.png" alt="cos(empirical harm direction, Assistant direction) per model" loading="lazy" style="max-width:100%; height:auto;" />
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;F.</span>
+        Cosine of the empirical harm direction with the Assistant direction, per model. Three models sit in a near-orthogonal band (|cos| &lt; 0.4); reasoning-on is the only model where the harm direction has substantial Assistant-direction component.
+      </figcaption>
+    </figure>
+    <p>
+      The defense behaves accordingly &mdash; the Assistant-direction cap is robust on this model (&minus;9.9&nbsp;pp at zero attack; the strongest harm-aligned PC2 attack at λ=0.25 recovers only +1.4&nbsp;pp). The framing: extended reasoning concentrates the safety-relevant geometry into the Assistant direction, the residual blind spot shrinks, and the cap that holds elsewhere holds here too.
+    </p>
+
+    <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:32px;">Qwen 3 32B &mdash; most robust defense observed</h3>
+    <p>
+      Despite carrying the largest blind-spot AUC lift among the four models (+0.31), all four attack classes &mdash; harm-aligned PC2, harm-aligned PC3, the empirical harm direction, and a null-space attack &mdash; fail to recover any harm above the cap-defended baseline at λ &isin; [0.15, 0.25]. Coherence stays above 97% on every harm-aligned attack and above 90% on the null-space attack. The framing: the cap is geometrically near-complete on this model at the steering magnitudes tested. Whether stronger attacks at higher λ would succeed before coherence collapse is open.
+    </p>
+    <figure>
+      <iframe src="figures/per_model_attack_pareto.html" height="560" loading="lazy" title="Per-model dose-response curves"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;G.</span>
+        Per-direction dose-response of harm rate on the cap-defended model at increasing steering magnitude λ, for each of the three new models. Qwen 3 32B (left): all directions stay near zero through the coherence-preserving λ range. Gemma 4 31B reasoning-off (middle): harm-aligned PC3 and the null-space attack rise sharply with λ. Gemma 4 31B reasoning-on (right): the defended model is robust, with all directions remaining near or below the defended baseline. Hover reveals coherence at each point.
+      </figcaption>
+    </figure>
+
+    <h2>Headline numbers &mdash; across models</h2>
+    <div class="claim-card">
+      <table>
+        <thead>
+          <tr>
+            <td style="font-weight:600; color:var(--fg);">Metric</td>
+            <td style="font-weight:600; color:var(--fg); text-align:right;">Gemma 2 27B</td>
+            <td style="font-weight:600; color:var(--fg); text-align:right;">Qwen 3 32B</td>
+            <td style="font-weight:600; color:var(--fg); text-align:right;">Gemma 4 31B<br/>(reasoning off)</td>
+            <td style="font-weight:600; color:var(--fg); text-align:right;">Gemma 4 31B<br/>(reasoning on)</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Probe layer / network depth</td><td>21 / 42 (50%)</td><td>11 / 64 (17%)</td><td>14 / 60 (23%)</td><td><strong>59 / 60 (98%)</strong></td></tr>
+          <tr><td>cos(PC1, Assistant direction) at probe layer</td><td>0.88</td><td>0.90</td><td>0.82</td><td>0.82</td></tr>
+          <tr><td>Baseline harm rate (no defense)</td><td>14.8%</td><td>8.6%</td><td>10.2%</td><td>15.0%</td></tr>
+          <tr><td>Refusal rate at baseline</td><td>41.4%</td><td>71.2%</td><td>77.2%</td><td>77.6%</td></tr>
+          <tr><td>Cap-defended harm rate (Assistant-direction cap)</td><td>1.8%</td><td>2.4%</td><td><strong>11.2%</strong></td><td>5.1%</td></tr>
+          <tr><td>Cap &Delta;harm vs baseline</td><td><strong>&minus;13.0 pp</strong></td><td><strong>&minus;6.2 pp</strong></td><td><strong>+1.0 pp</strong> (fails)</td><td><strong>&minus;9.9 pp</strong></td></tr>
+          <tr><td>AUC(Assistant direction only)</td><td>0.728</td><td>0.628</td><td>0.576</td><td>0.813</td></tr>
+          <tr><td>AUC(Assistant direction + persona PCs)</td><td>0.967</td><td>0.930</td><td>0.866</td><td>0.905</td></tr>
+          <tr><td>AUC lift &Delta; [95% BCa CI]</td><td>+0.240 [+0.21,&nbsp;+0.27]</td><td>+0.312 [+0.21,&nbsp;+0.42]</td><td>+0.295 [+0.19,&nbsp;+0.41]</td><td>+0.101 [+0.05,&nbsp;+0.15]</td></tr>
+          <tr><td>LASSO-selected components</td><td>PC2&ndash;5,&nbsp;7&ndash;10</td><td>PC3&ndash;PC8</td><td>PC4 only</td><td>PC2&ndash;PC10</td></tr>
+          <tr><td>cos(empirical harm direction, Assistant direction)</td><td>&minus;0.36</td><td>+0.13</td><td>+0.05</td><td><strong>+0.56</strong></td></tr>
+          <tr><td>Best harm-aligned attack on defended model</td><td>v_harm @ λ=0.10</td><td>PC2 @ λ=0.15</td><td><strong>PC3 @ λ=0.25</strong></td><td>PC2 @ λ=0.25</td></tr>
+          <tr><td>Best-attack harm rate</td><td>14.6%</td><td>0.6%</td><td><strong>23.6%</strong></td><td>6.5%</td></tr>
+          <tr><td>Best-attack &Delta; vs cap-defended baseline</td><td>+12.8 pp</td><td>&minus;1.8 pp (fails)</td><td><strong>+12.4 pp</strong></td><td>+1.4 pp</td></tr>
+          <tr><td>Coherence at best attack</td><td>76.7%</td><td>98.6%</td><td><strong>99.8%</strong></td><td>99.6%</td></tr>
+          <tr><td>n prompts (probe analysis / attack arm)</td><td>500 / 500</td><td>500 / 508</td><td>500 / 508</td><td>500 / 508</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:14px; color:var(--muted); margin-top:8px;">
+      Bold cells flag the divergent model. Probes use the DAN-jailbreak prompt distribution; the empirical harm direction is computed at each model's own probe layer. Per-model dose-response curves and full per-attack tables are in the receipts.
+    </p>
+
+    <h2 id="deep-dive-gemma2">Deep dive: Gemma 2 27B</h2>
+    <p>
+      The remainder of the page gives the original single-model trace on Gemma&nbsp;2&nbsp;27B &mdash; pipeline validation, the cap-and-attack outcomes that motivated the cross-model study, and an extension sweep covering cross-dataset replication on Shah-reconstructed prompts, the empirical-harm-direction decomposition, a sign-corrected per-axis attack arm, and a multi-axis defense interaction matrix. These four extension analyses are run on Gemma&nbsp;2&nbsp;27B only; cross-model replication of each is the natural next step.
+    </p>
 
     <h2>The defense and what it leaves behind</h2>
     <figure>
@@ -248,7 +388,8 @@
       </figcaption>
     </figure>
 
-    <h2>Headline numbers</h2>
+    <h2>Headline numbers &mdash; Gemma 2 27B detail</h2>
+    <p style="font-size:14px; color:var(--muted); margin-top:-6px; margin-bottom:14px;">Full per-condition table for the Gemma&nbsp;2&nbsp;27B deep dive, including the Shah-reconstructed cross-dataset rows and the multi-axis-defense interaction-matrix entries. Cross-model summary numbers are in the four-model table above.</p>
     <div class="claim-card">
       <table>
         <tr><td>Baseline DAN harm rate (n=500)</td><td>14.8% [12.0, 18.2]</td></tr>
@@ -289,9 +430,9 @@
       </table>
     </div>
 
-    <h2 id="follow-up-findings">Follow-up findings</h2>
+    <h2 id="follow-up-findings">Follow-up findings (Gemma 2 27B only)</h2>
     <p>
-      The findings above are the single-axis result. The follow-up work resolves four of the open questions raised by it: cross-dataset replication on Shah-reconstructed jailbreaks, the geometry of <code>v_harm</code> on the merged baseline, sign-corrected per-axis attack characterization with adaptive &lambda;, and a multi-axis defense interaction matrix. Numbers below come from <code>results/plan_b_gemma2_27b/extensions/</code>; full per-cell parquets and JSON in the receipts.
+      <strong>Scope note.</strong> The four analyses below are run on Gemma&nbsp;2&nbsp;27B only. Each one resolves an open question raised by the single-model result &mdash; cross-dataset replication on Shah-reconstructed jailbreaks, the geometry of the empirical harm direction on the merged baseline, a sign-corrected per-axis attack characterization with adaptive &lambda;, and a multi-axis defense interaction matrix. Cross-model replication of each &mdash; particularly the multi-axis defense interaction matrix on the three new models &mdash; is the natural next step. Numbers below come from <code>results/plan_b_gemma2_27b/extensions/</code>; full per-cell parquets and JSON in the receipts.
     </p>
 
     <h3 style="text-transform:none; color:var(--fg); font-size:18px; margin-top:24px;">Cross-dataset replication on Shah jailbreaks</h3>
@@ -386,33 +527,43 @@
     </p>
 
 
+    <h2>Limitations</h2>
     <ul>
-      <li><strong>n = 1 model.</strong> Findings are on Gemma&nbsp;2&nbsp;27B only. Cross-architecture replication on Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B (thinking ON / OFF) is the next phase &mdash; the cross-model PC1/AA stability claim in the paper rests on multiple subjects.</li>
-      <li><strong>One attack distribution.</strong> DAN persona-jailbreak prompts only. Cross-dataset replication on Shah-reconstructed synthetic jailbreaks (Shah et&nbsp;al. 2311.03348 methodology) is the next phase.</li>
-      <li><strong>No capability evaluation.</strong> The defense is measured on harm only; the harm-vs-capability Pareto frontier (IFEval, MMLU-Pro, GSM8k, EQ-Bench) is not reported here.</li>
-      <li><strong>Random-direction baselines at &lambda;=0.25 collapse model coherence.</strong> The PC-vs-random contrast at this &lambda; is therefore degenerate; the cleanest version of the random-baseline claim requires a coherence-matched random-direction sweep at lower &lambda;, which is the next experiment in this thread.</li>
-      <li><strong>The LASSO finding is predictive, not causal.</strong> A direction that <em>predicts</em> harm in baseline activations is not necessarily a direction whose <em>cap</em> would defend in deployment, nor whose <em>steering</em> would attack. Causal validation is a separate experiment (the first item in the next-phase plan).</li>
-      <li><strong>Within-cap Cohen's d.</strong> Only n=9 of the 500 capped responses are judged <code>enough_info</code>, which gives the within-cap harm vs safe Cohen's d a small positive group. The CI is reported but the underlying group size limits how tight the bound can be made.</li>
-      <li><strong>Cross-judge agreement.</strong> Primary judge (Qwen&nbsp;3.6&nbsp;27B) is not yet validated against the paper's frontier-judge benchmark on this model's outputs (paper reports 91.6% binary agreement against human labels for <code>deepseek-v3</code>; we plan a 200-sample GPT-5.5 cross-check on a subsequent run).</li>
+      <li><strong>Cross-model coverage is partial.</strong> Four models, three of them Gemma-family. The cross-architecture claim rests on Qwen&nbsp;3&nbsp;32B alone; broader architecture coverage (e.g., Llama, Mistral, DBRX) is open.</li>
+      <li><strong>One attack distribution.</strong> DAN persona-jailbreak prompts are the attack class for all four models. Cross-dataset replication on Shah-reconstructed synthetic jailbreaks (Shah et&nbsp;al. 2311.03348 methodology) is currently Gemma&nbsp;2&nbsp;27B only.</li>
+      <li><strong>No capability evaluation.</strong> The defense is measured on harm only; the harm-vs-capability Pareto frontier (IFEval, MMLU-Pro, GSM8k, EQ-Bench) is not reported here. Capability-vs-harm sweeps on all four models are forthcoming.</li>
+      <li><strong>Reasoning-mode comparison is within a single model.</strong> The geometry-reorganization-with-reasoning result (probe layer at 98% depth; harm direction substantially aligned with the Assistant direction) is on Gemma&nbsp;4&nbsp;31B only. Whether this generalizes to other reasoning-capable models is open.</li>
+      <li><strong>Probe-layer-at-final-layer caveat.</strong> The probe layer at 98% depth on Gemma&nbsp;4&nbsp;31B with reasoning on sits at the network's penultimate layer. Whether this is a genuine final-layer phenomenon or an artifact of the role-separation argmax criterion (which favours later layers when role information accumulates) is open.</li>
+      <li><strong>The follow-up extension findings are Gemma 2 27B only.</strong> Cross-dataset replication on Shah jailbreaks, the empirical-harm-direction decomposition, the sign-corrected per-axis attack arm, and the multi-axis defense interaction matrix are all currently single-model. Replication on the three new models &mdash; particularly the multi-axis defense interaction matrix &mdash; is the natural next step.</li>
+      <li><strong>Random-direction baselines at &lambda;=0.25 collapse model coherence on Gemma 2 27B.</strong> The PC-vs-random contrast at this &lambda; is therefore degenerate on that model; the cleanest version of the random-baseline claim requires a coherence-matched random-direction sweep at lower &lambda;. On the three new models, the per-axis attack protocol uses harm-aligned-and-sign-corrected directions with coherence-preserving &lambda; values (0.15&ndash;0.25), which side-steps this issue.</li>
+      <li><strong>LASSO is predictive; causal exploitability is dissociable.</strong> Causal exploit demonstrated on two of four models (Gemma&nbsp;2&nbsp;27B with empirical-harm-direction-direct attack at &lambda;=0.10, and Gemma&nbsp;4&nbsp;31B reasoning-off with harm-aligned PC3 attack at &lambda;=0.25). The other two models resist all harm-aligned attacks tested at coherence-preserving steering magnitudes &mdash; whether stronger attacks at higher &lambda; would succeed before coherence collapse is open. Note also that LASSO selection and adversarial exploitability are not the same on Gemma&nbsp;4&nbsp;31B reasoning-off (LASSO picks PC4; the most successful attack steers along PC3).</li>
+      <li><strong>Within-cap Cohen's d (Gemma 2 27B only).</strong> Only n=9 of the 500 capped responses on Gemma&nbsp;2&nbsp;27B are judged <code>enough_info</code>, which gives the within-cap harm vs safe Cohen's d a small positive group. The CI is reported but the underlying group size limits how tight the bound can be made.</li>
+      <li><strong>Cross-judge agreement validation is Gemma 2 27B only.</strong> Primary judge (Qwen&nbsp;3.6&nbsp;27B) is validated against GPT-5.5 at 93% binary agreement on a 200-sample stratified subset of the Gemma&nbsp;2&nbsp;27B run (paper reports 91.6% binary agreement against human labels for <code>deepseek-v3</code>). Re-validation per-model is not yet performed.</li>
     </ul>
 
     <h2>Research questions for the next phase</h2>
-    <p>The single-axis result raised five questions. The follow-up findings resolved three of them &mdash; the resolutions are noted in-place below; the remaining two carry forward.</p>
+    <p>The single-axis result raised five questions; the cross-model extension to three additional models added two more. Resolutions are noted in-place; carry-forwards are flagged.</p>
     <ol>
       <li>
-        <strong>Is the harm signal AA-aligned, or genuinely orthogonal to AA?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; orthogonal.</span> <code>cos_sim(v_harm, AA) = &minus;0.36</code> on the merged DAN+Shah baseline (n=2,207). v_harm aligns most strongly with PC2 (cos = &minus;0.64), with secondary components on PC3 / AA / PC4. 86% of v_harm energy lives in the top-10 role-PCA basis. See Extension&nbsp;2 above.
+        <strong>Is the harm signal Assistant-direction-aligned or genuinely orthogonal?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED with nuance.</span> Orthogonal in three of four models &mdash; cos(empirical harm direction, Assistant direction) is &minus;0.36 on Gemma&nbsp;2&nbsp;27B, +0.13 on Qwen&nbsp;3&nbsp;32B, and +0.05 on Gemma&nbsp;4&nbsp;31B with reasoning off. The exception is Gemma&nbsp;4&nbsp;31B with reasoning on, where the harm direction becomes substantially aligned with the Assistant direction (cos = +0.56). Extended reasoning reorganizes the geometry; the original H1 framing holds in the non-reasoning regime.
       </li>
       <li>
-        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; causal.</span> Sign-corrected steering along PC2 at &lambda;=0.05 lifts harm rate from 1.8% (AA-cap baseline) to 11.1%. v_harm-direct at &lambda;=0.10 lifts to 14.6%. Both at &gt;76% coherence. The orthogonal directions are adversarially exploitable, not just predictively correlated. See Extension&nbsp;3 above.
+        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; causal on two of four models.</span> Empirical-harm-direction-direct steering on Gemma&nbsp;2&nbsp;27B at &lambda;=0.10 lifts harm to 14.6% (+12.8&nbsp;pp above the cap-defended baseline; coherence 76.7%). Harm-aligned PC3 steering on Gemma&nbsp;4&nbsp;31B with reasoning off at &lambda;=0.25 lifts harm to 23.6% (+12.4&nbsp;pp; coherence 99.8%). Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B with reasoning on resist all harm-aligned attacks tested at coherence-preserving steering magnitudes &mdash; whether stronger attacks at higher &lambda; would succeed before coherence collapse is open.
       </li>
       <li>
-        <strong>Does capping AA + PC2 + PC3 jointly close the orthogonal signal?</strong> <span style="color:var(--accent-warn); font-weight:600;">PARTIAL &mdash; per-axis tau is the hard part.</span> Single extra axis (<code>aa_pc2</code>) preserves coherence (91%) and stabilizes refusal style under matched attack, but does not reduce binary harm rate. Stacking three caps at p25 each (<code>aa_pc2_pc3_pc4</code>) breaks coherence entirely (100% nonsense). The blind spot is real but closing it without coherence loss requires per-axis Pareto-optimized tau &mdash; left for next-phase work. See Extension&nbsp;4 above.
+        <strong>Does capping the Assistant direction plus higher persona PCs jointly close the orthogonal signal?</strong> <span style="color:var(--accent-warn); font-weight:600;">PARTIAL on Gemma 2 27B; in progress on the other three models.</span> Single extra axis (Assistant direction&nbsp;+&nbsp;harm-aligned PC2) preserves coherence at 91% and stabilizes refusal style under matched attack but does not reduce binary harm rate. Stacking three extra axes at the same percentile breaks coherence entirely. The blind spot is real but closing it without coherence loss requires per-axis Pareto-optimized thresholds. Cross-model multi-axis defense interaction matrices on Qwen&nbsp;3&nbsp;32B and the two Gemma&nbsp;4&nbsp;31B configurations are in progress.
       </li>
       <li>
-        <strong>What does PC2/PC3 actually do to model voice when it preserves coherence?</strong> <em>Carries forward.</em> Sign-corrected PC2/PC3 attacks at coherent &lambda; do recover harm (resolving the original framing). Mechanistic interpretation of <em>which</em> persona dimensions PC2/PC3 govern (Chen et&nbsp;al.-style persona vectors thread) remains open.
+        <strong>What do the higher persona PCs actually do to model voice when they preserve coherence?</strong> <em>Carries forward.</em> Mechanistic interpretation of which persona dimensions PC2/PC3/etc. govern (Chen et&nbsp;al.-style persona-vectors thread) remains open. Particularly relevant given that on Gemma&nbsp;4&nbsp;31B with reasoning off, the LASSO selects PC4 but the strongest adversarial attack steers along PC3.
       </li>
       <li>
-        <strong>Does the blind-spot signal replicate cross-architecture and cross-dataset?</strong> <em>Cross-dataset partially answered: Shah-reconstructed reproduces the AA-cap defense direction at half DAN's baseline rate.</em> Cross-architecture (Qwen&nbsp;3&nbsp;32B, Gemma&nbsp;4&nbsp;31B thinking ON/OFF) carries forward.
+        <strong>Does the blind-spot signal replicate cross-architecture and cross-dataset?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED on cross-architecture; cross-dataset partial.</span> The orthogonal-to-Assistant-direction harm signal lifts AUC by +0.10 to +0.31 on every model tested, with 95% CIs excluding zero. Defense robustness is heterogeneous &mdash; including the frontier-model failure mode on Gemma&nbsp;4&nbsp;31B with reasoning off. Cross-dataset replication on Shah-reconstructed jailbreaks remains Gemma&nbsp;2&nbsp;27B only.
+      </li>
+      <li>
+        <strong>What predicts defense robustness across models?</strong> <em>NEW &mdash; carries forward.</em> The number of LASSO-selected components is not predictive: reasoning-on selects nine and defends; reasoning-off selects one and fails. LASSO selection and adversarial exploitability are also dissociable on reasoning-off (LASSO picks PC4; the strongest attack steers along PC3). Candidate predictors to evaluate as more models come online: cos(empirical harm direction, Assistant direction), the Assistant-direction-only AUC, and the per-model probe-layer depth as a fraction of network depth.
+      </li>
+      <li>
+        <strong>What does the harm-vs-capability Pareto look like across the four models?</strong> <em>NEW &mdash; carries forward.</em> Capability evaluation (IFEval, MMLU-Pro, GSM8k, EQ-Bench) on the four models under unsteered, Assistant-direction-cap, and multi-axis-cap conditions is the next experiment. Without it, the headline harm reductions cannot be priced against capability cost.
       </li>
     </ol>
 
@@ -428,7 +579,36 @@
         <li><strong>Research extensions plan:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/plans/extensions_post_plan_b.md"><code>plans/extensions_post_plan_b.md</code></a> &mdash; the five next-phase research questions with budgets, trigger conditions, and predicted discriminating outcomes</li>
         <li><strong>Run manifest:</strong> <code>results/plan_b_gemma2_27b/manifest.json</code> &mdash; schema, seed, git SHA, per-phase wall clock, peak VRAM</li>
         <li><strong>Per-prompt details:</strong> <code>results/plan_b_gemma2_27b/details.parquet</code> &mdash; 3,000 rows of (prompt, response, condition, harm label, AA + PC1..PC10 projections at L*=21)</li>
-        <li><strong>Final metrics:</strong> <code>results/plan_b_gemma2_27b/metrics.json</code> &mdash; per-condition harm + BCa CI, blind-spot AUC delta + CI, Cohen's d for PC2/PC3 within-cap, selected PCs, refusal-keyword rates per condition</li>
+        <li><strong>Final metrics (Gemma 2 27B):</strong> <code>results/plan_b_gemma2_27b/metrics.json</code> &mdash; per-condition harm + BCa CI, blind-spot AUC delta + CI, Cohen's d for PC2/PC3 within-cap, selected PCs, refusal-keyword rates per condition</li>
+        <li><strong>Cross-model probe-analysis metrics:</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_a/qwen_3_32b/metrics.json</code></li>
+            <li><code>results/phase_a/gemma_4_31b_thinking_off/metrics.json</code></li>
+            <li><code>results/phase_a/gemma_4_31b_thinking_on/metrics.json</code></li>
+          </ul>
+        </li>
+        <li><strong>Cross-model attack-arm headlines:</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_b/qwen_3_32b/headline.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_off/headline.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_on/headline.json</code></li>
+          </ul>
+        </li>
+        <li><strong>Per-direction dose-response curves:</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_b/qwen_3_32b/lambda_pareto.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_off/lambda_pareto.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_on/lambda_pareto.json</code></li>
+          </ul>
+        </li>
+        <li><strong>Empirical-harm-direction decompositions:</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_b/qwen_3_32b/harm_direction.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_off/harm_direction.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_on/harm_direction.json</code></li>
+          </ul>
+        </li>
+        <li><strong>Cross-model figure generator:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/scripts/generate_cross_model_figures.py"><code>scripts/generate_cross_model_figures.py</code></a> &mdash; reads the JSONs above and emits the cross-model figures shown on this page</li>
       </ul>
     </div>
 
