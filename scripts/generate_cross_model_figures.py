@@ -484,20 +484,22 @@ def fig_pipeline_validation(rows: list[dict]) -> None:
     fig.update_yaxes(range=[0, max(baseline_harm) * 1.4], row=1, col=1, title_text="harm (%)")
     fig.update_yaxes(range=[0, 100], row=1, col=2, title_text="refusal (%)")
     fig.update_yaxes(range=[0.5, 1.10], row=1, col=3, title_text="AUC")
-    fig.update_xaxes(tickangle=0)
+    fig.update_xaxes(tickangle=15)
     fig.update_layout(
         title="Pipeline validation across the four models",
         template="plotly_white",
-        height=520,
+        height=540,
         barmode="group",
-        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.18),
-        margin=dict(t=80, b=90, l=60, r=40),
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.22),
+        margin=dict(t=80, b=110, l=60, r=40),
     )
     fig.write_html(DOCS_FIGURES / "cross_model_pipeline.html", include_plotlyjs="cdn")
 
-    # PNG (3 panels)
+    # PNG (3 panels). Rotate x labels by 15° so the longer "G4 31B (off/on)"
+    # tags don't crowd each other in the AUC panel where the 2-bar groups
+    # narrow the per-category space.
     short_labels = ["G2 27B", "Qwen 3 32B", "G4 31B (off)", "G4 31B (on)"]
-    fig2, axes = plt.subplots(1, 3, figsize=(14, 4.6))
+    fig2, axes = plt.subplots(1, 3, figsize=(14, 4.8))
     axes[0].bar(short_labels, baseline_harm, color=C_ACCENT)
     axes[0].set_title("Baseline harm rate")
     axes[0].set_ylabel("harm (%)")
@@ -509,11 +511,13 @@ def fig_pipeline_validation(rows: list[dict]) -> None:
     axes[2].bar(x - w / 2, auc_aa, w, color=C_GREY, label="AA only")
     axes[2].bar(x + w / 2, auc_full, w, color=C_ACCENT, label="AA + PCs")
     axes[2].set_xticks(x)
-    axes[2].set_xticklabels(short_labels)
     axes[2].set_ylim(0.5, 1.10)
     axes[2].set_title("Harm-prediction AUC")
     axes[2].set_ylabel("AUC")
     axes[2].legend(loc="upper left", fontsize=9, frameon=False)
+    for ax in axes:
+        ax.set_xticks(np.arange(len(short_labels)))
+        ax.set_xticklabels(short_labels, rotation=15, ha="right")
     fig2.suptitle("Pipeline validation across the four models")
     fig2.tight_layout()
     fig2.savefig(DOCS_FIGURES / "cross_model_pipeline.png", dpi=150)
