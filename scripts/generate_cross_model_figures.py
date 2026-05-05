@@ -431,7 +431,8 @@ def fig_probe_depth(rows: list[dict]) -> None:
 
 
 def fig_pipeline_validation(rows: list[dict]) -> None:
-    labels = [r["label"] for r in rows]
+    full_labels = [r["label"] for r in rows]
+    short_labels = ["G2 27B", "Qwen 3 32B", "G4 31B (off)", "G4 31B (on)"]
     baseline_harm = [r["baseline_harm"] * 100 for r in rows]
     refusal = [(r["refusal_baseline"] or 0) * 100 for r in rows]
     auc_aa = [r["auc_aa"] for r in rows]
@@ -447,45 +448,50 @@ def fig_pipeline_validation(rows: list[dict]) -> None:
         ),
         horizontal_spacing=0.10,
     )
+    # Pass SHORT labels directly to the bar traces (categorical-axis tickvals
+    # remap is unreliable in plotly; short labels per-bar always work). Hover
+    # restores the full subject name.
     fig.add_trace(
-        go.Bar(x=labels, y=baseline_harm, marker_color=C_ACCENT, showlegend=False,
+        go.Bar(x=short_labels, y=baseline_harm, marker_color=C_ACCENT, showlegend=False,
                text=[f"{v:.1f}%" for v in baseline_harm], textposition="outside",
-               hovertemplate="<b>%{x}</b><br>%{y:.1f}%<extra></extra>"),
+               customdata=full_labels,
+               hovertemplate="<b>%{customdata}</b><br>%{y:.1f}%<extra></extra>"),
         row=1, col=1,
     )
     fig.add_trace(
-        go.Bar(x=labels, y=refusal, marker_color=C_OK, showlegend=False,
+        go.Bar(x=short_labels, y=refusal, marker_color=C_OK, showlegend=False,
                text=[f"{v:.1f}%" for v in refusal], textposition="outside",
-               hovertemplate="<b>%{x}</b><br>%{y:.1f}%<extra></extra>"),
+               customdata=full_labels,
+               hovertemplate="<b>%{customdata}</b><br>%{y:.1f}%<extra></extra>"),
         row=1, col=2,
     )
     fig.add_trace(
-        go.Bar(x=labels, y=auc_aa, name="Assistant direction only",
+        go.Bar(x=short_labels, y=auc_aa, name="Assistant direction only",
                marker_color=C_GREY,
                text=[f"{v:.2f}" for v in auc_aa], textposition="outside",
-               hovertemplate="<b>%{x}</b><br>AUC(AA)=%{y:.3f}<extra></extra>"),
+               customdata=full_labels,
+               hovertemplate="<b>%{customdata}</b><br>AUC(AA)=%{y:.3f}<extra></extra>"),
         row=1, col=3,
     )
     fig.add_trace(
-        go.Bar(x=labels, y=auc_full, name="Assistant direction + persona PCs",
+        go.Bar(x=short_labels, y=auc_full, name="Assistant direction + persona PCs",
                marker_color=C_ACCENT,
                text=[f"{v:.2f}" for v in auc_full], textposition="outside",
-               hovertemplate="<b>%{x}</b><br>AUC(AA+PCs)=%{y:.3f}<extra></extra>"),
+               customdata=full_labels,
+               hovertemplate="<b>%{customdata}</b><br>AUC(AA+PCs)=%{y:.3f}<extra></extra>"),
         row=1, col=3,
     )
     fig.update_yaxes(range=[0, max(baseline_harm) * 1.4], row=1, col=1, title_text="harm (%)")
     fig.update_yaxes(range=[0, 100], row=1, col=2, title_text="refusal (%)")
     fig.update_yaxes(range=[0.5, 1.10], row=1, col=3, title_text="AUC")
-    # Steeper rotation + use shorter label aliases to keep the four columns from overlapping.
-    short_labels = ["G2 27B", "Qwen 3 32B", "G4 31B (off)", "G4 31B (on)"]
-    fig.update_xaxes(tickangle=0, ticktext=short_labels, tickvals=labels)
+    fig.update_xaxes(tickangle=0)
     fig.update_layout(
         title="Pipeline validation across the four models",
         template="plotly_white",
         height=520,
         barmode="group",
         legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.18),
-        margin=dict(t=80, b=110, l=60, r=40),
+        margin=dict(t=80, b=90, l=60, r=40),
     )
     fig.write_html(DOCS_FIGURES / "cross_model_pipeline.html", include_plotlyjs="cdn")
 
@@ -655,8 +661,10 @@ def fig_thinking_off_breakdown(rows: list[dict]) -> None:
             x=list(labels),
             y=list(harms),
             marker_color=[C_WARN if h > defended else C_ACCENT for h in harms],
-            text=[f"{h:.1f}%<br><sub>coh {c:.1f}%</sub>" for h, c in zip(harms, cohs)],
+            # Single-line label keeps clear of the horizontal baseline lines.
+            text=[f"{h:.1f}% (coh {c:.0f}%)" for h, c in zip(harms, cohs)],
             textposition="outside",
+            cliponaxis=False,
             customdata=cohs,
             hovertemplate=(
                 "<b>%{x}</b><br>harm = %{y:.1f}%"
@@ -668,41 +676,51 @@ def fig_thinking_off_breakdown(rows: list[dict]) -> None:
         y=defended,
         line=dict(color=C_OK, dash="dash"),
         annotation_text=f"defended baseline = {defended:.1f}%",
-        annotation_position="top right",
+        annotation_position="top left",
     )
     fig.add_hline(
         y=baseline,
         line=dict(color=C_GREY, dash="dot"),
         annotation_text=f"undefended baseline = {baseline:.1f}%",
-        annotation_position="bottom right",
+        annotation_position="bottom left",
     )
     fig.update_layout(
         title=dict(
             text=(
                 "Gemma 4 31B (reasoning off): every attack class on the defended model"
-                "<br><sub>The defense (Assistant-direction cap) sits above the undefended baseline at 11.2% — i.e. the cap slightly "
-                "increases harm at zero attack.<br>A single harm-aligned PC3 attack at coherence-preserving λ then drives harm to "
+                "<br><sub>The Assistant-direction cap sits at 11.2% — slightly above the undefended baseline of 10.2%, so the cap "
+                "increases harm at zero attack.<br>A single harm-aligned PC3 attack at coherence-preserving λ drives harm to "
                 "23.6% at 99.8% coherence.</sub>"
             ),
             y=0.96, yanchor="top",
         ),
-        yaxis=dict(title="harm rate (%)", range=[0, max(harms) * 1.45]),
+        yaxis=dict(title="harm rate (%)", range=[0, max(harms) * 1.30]),
         template="plotly_white",
-        margin=dict(t=140, b=130, l=70, r=40),
-        height=580,
+        margin=dict(t=120, b=140, l=70, r=40),
+        height=560,
     )
     fig.write_html(DOCS_FIGURES / "thinking_off_attack_breakdown.html", include_plotlyjs="cdn")
 
+    # PNG. Strategy:
+    #   - Lift the harm-rate label to max(h, defended_baseline) + headroom so
+    #     bars near the baseline lines never have their label collide with the lines.
+    #   - Drop the in-bar coherence label entirely; coherence is in the caption
+    #     and (for the HTML version) in the hover tooltip.
     fig2, ax = plt.subplots(figsize=(10, 5.4))
     ax.bar(labels, harms, color=[C_WARN if h > defended else C_ACCENT for h in harms])
     ax.axhline(defended, color=C_OK, linestyle="--", label=f"defended baseline ({defended:.1f}%)")
     ax.axhline(baseline, color=C_GREY, linestyle=":", label=f"undefended baseline ({baseline:.1f}%)")
     ax.set_ylim(0, max(harms) * 1.30)
+    headroom = max(harms) * 0.04
     for xi, (h, c) in enumerate(zip(harms, cohs)):
-        ax.text(xi, h + 0.5, f"{h:.1f}%\n(coh {c:.0f}%)", ha="center", fontsize=8.5)
+        # Place label above the bar OR above the baselines, whichever is higher.
+        label_y = max(h, defended) + headroom
+        ax.text(xi, label_y, f"{h:.1f}%  (coh {c:.0f}%)", ha="center", va="bottom",
+                fontsize=9.5, fontweight="600")
     ax.set_ylabel("harm rate (%)")
     ax.set_title("Gemma 4 31B (reasoning off) — per-attack harm vs the defended baseline", pad=14)
     ax.legend(loc="upper right", fontsize=9, frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
     plt.xticks(rotation=20, ha="right")
     fig2.tight_layout()
     fig2.savefig(DOCS_FIGURES / "thinking_off_attack_breakdown.png", dpi=150)
