@@ -475,39 +475,39 @@ def fig_pipeline_validation(rows: list[dict]) -> None:
     )
     fig.update_yaxes(range=[0, max(baseline_harm) * 1.4], row=1, col=1, title_text="harm (%)")
     fig.update_yaxes(range=[0, 100], row=1, col=2, title_text="refusal (%)")
-    fig.update_yaxes(range=[0.5, 1.05], row=1, col=3, title_text="AUC")
-    fig.update_xaxes(tickangle=15)
+    fig.update_yaxes(range=[0.5, 1.10], row=1, col=3, title_text="AUC")
+    # Steeper rotation + use shorter label aliases to keep the four columns from overlapping.
+    short_labels = ["G2 27B", "Qwen 3 32B", "G4 31B (off)", "G4 31B (on)"]
+    fig.update_xaxes(tickangle=0, ticktext=short_labels, tickvals=labels)
     fig.update_layout(
         title="Pipeline validation across the four models",
         template="plotly_white",
-        height=480,
+        height=520,
         barmode="group",
-        legend=dict(orientation="h", x=0.0, y=-0.20),
-        margin=dict(t=80, b=130, l=60, r=40),
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.18),
+        margin=dict(t=80, b=110, l=60, r=40),
     )
     fig.write_html(DOCS_FIGURES / "cross_model_pipeline.html", include_plotlyjs="cdn")
 
     # PNG (3 panels)
-    fig2, axes = plt.subplots(1, 3, figsize=(14, 4.5))
-    axes[0].bar(labels, baseline_harm, color=C_ACCENT)
+    short_labels = ["G2 27B", "Qwen 3 32B", "G4 31B (off)", "G4 31B (on)"]
+    fig2, axes = plt.subplots(1, 3, figsize=(14, 4.6))
+    axes[0].bar(short_labels, baseline_harm, color=C_ACCENT)
     axes[0].set_title("Baseline harm rate")
     axes[0].set_ylabel("harm (%)")
-    axes[1].bar(labels, refusal, color=C_OK)
+    axes[1].bar(short_labels, refusal, color=C_OK)
     axes[1].set_title("Refusal rate at baseline")
     axes[1].set_ylabel("refusal (%)")
-    x = np.arange(len(labels))
+    x = np.arange(len(short_labels))
     w = 0.38
     axes[2].bar(x - w / 2, auc_aa, w, color=C_GREY, label="AA only")
     axes[2].bar(x + w / 2, auc_full, w, color=C_ACCENT, label="AA + PCs")
     axes[2].set_xticks(x)
-    axes[2].set_xticklabels(labels, rotation=15, ha="right")
-    axes[2].set_ylim(0.5, 1.05)
+    axes[2].set_xticklabels(short_labels)
+    axes[2].set_ylim(0.5, 1.10)
     axes[2].set_title("Harm-prediction AUC")
     axes[2].set_ylabel("AUC")
-    axes[2].legend(loc="lower right", fontsize=8)
-    for ax in axes[:2]:
-        ax.set_xticks(np.arange(len(labels)))
-        ax.set_xticklabels(labels, rotation=15, ha="right")
+    axes[2].legend(loc="upper left", fontsize=9, frameon=False)
     fig2.suptitle("Pipeline validation across the four models")
     fig2.tight_layout()
     fig2.savefig(DOCS_FIGURES / "cross_model_pipeline.png", dpi=150)
@@ -677,27 +677,32 @@ def fig_thinking_off_breakdown(rows: list[dict]) -> None:
         annotation_position="bottom right",
     )
     fig.update_layout(
-        title=(
-            "Gemma 4 31B (reasoning off): every attack class on the defended model"
-            "<br><sub>The defense (Assistant-direction cap) sits above the undefended baseline at 11.2% — i.e. the cap slightly increases harm at zero attack. "
-            "A single harm-aligned PC3 attack at coherence-preserving λ then drives harm to 23.6% at 99.8% coherence.</sub>"
+        title=dict(
+            text=(
+                "Gemma 4 31B (reasoning off): every attack class on the defended model"
+                "<br><sub>The defense (Assistant-direction cap) sits above the undefended baseline at 11.2% — i.e. the cap slightly "
+                "increases harm at zero attack.<br>A single harm-aligned PC3 attack at coherence-preserving λ then drives harm to "
+                "23.6% at 99.8% coherence.</sub>"
+            ),
+            y=0.96, yanchor="top",
         ),
-        yaxis=dict(title="harm rate (%)", range=[0, max(harms) * 1.25]),
+        yaxis=dict(title="harm rate (%)", range=[0, max(harms) * 1.45]),
         template="plotly_white",
-        margin=dict(t=110, b=110, l=70, r=40),
-        height=520,
+        margin=dict(t=140, b=130, l=70, r=40),
+        height=580,
     )
     fig.write_html(DOCS_FIGURES / "thinking_off_attack_breakdown.html", include_plotlyjs="cdn")
 
-    fig2, ax = plt.subplots(figsize=(10, 5))
+    fig2, ax = plt.subplots(figsize=(10, 5.4))
     ax.bar(labels, harms, color=[C_WARN if h > defended else C_ACCENT for h in harms])
     ax.axhline(defended, color=C_OK, linestyle="--", label=f"defended baseline ({defended:.1f}%)")
     ax.axhline(baseline, color=C_GREY, linestyle=":", label=f"undefended baseline ({baseline:.1f}%)")
+    ax.set_ylim(0, max(harms) * 1.30)
     for xi, (h, c) in enumerate(zip(harms, cohs)):
-        ax.text(xi, h + 0.5, f"{h:.1f}%\n(coh {c:.0f}%)", ha="center", fontsize=8)
+        ax.text(xi, h + 0.5, f"{h:.1f}%\n(coh {c:.0f}%)", ha="center", fontsize=8.5)
     ax.set_ylabel("harm rate (%)")
-    ax.set_title("Gemma 4 31B (reasoning off) — per-attack harm vs the defended baseline")
-    ax.legend()
+    ax.set_title("Gemma 4 31B (reasoning off) — per-attack harm vs the defended baseline", pad=14)
+    ax.legend(loc="upper right", fontsize=9, frameon=False)
     plt.xticks(rotation=20, ha="right")
     fig2.tight_layout()
     fig2.savefig(DOCS_FIGURES / "thinking_off_attack_breakdown.png", dpi=150)
