@@ -66,17 +66,23 @@ def fig_phase_d_closure() -> None:
             ax.text(bar.get_x() + bar.get_width() / 2, val + 0.4, f"{val:.1f}%",
                     ha="center", va="bottom", fontsize=8.5, color=C_DARK)
 
-    # Phase A baseline reference line (unsteered = 10.2%)
+    # Phase A baseline reference line (unsteered = 10.2%). The annotation is
+    # surfaced in the title rather than in-plot — placing it inline collides
+    # with whichever bar happens to be near 10.2% (and there's always one in
+    # the "No attack" column).
     ax.axhline(10.2, color=C_GREY, linestyle=":", linewidth=1.0)
-    ax.text(len(attacks) - 0.5, 10.2 + 0.2, "unsteered baseline (10.2%)", color=C_GREY,
-            fontsize=8.5, ha="right", va="bottom")
 
     ax.set_xticks(x)
     ax.set_xticklabels(attack_labels, fontsize=10)
     ax.set_ylabel("Harm rate (%)", fontsize=11)
-    ax.set_ylim(0, max(M["aa_only"]["signmatched_pc3_pos0p25"]["harm_rate"] * 100, 25) + 4)
-    ax.set_title("Multi-axis cap closes ~12% of the PC3 blind spot on Gemma 4 31B (reasoning off, n=508/cell)",
-                 fontsize=11.5, color=C_DARK)
+    # Bump y-limit by ~4 pp above the tallest label (the headroom needs to hold
+    # the value annotation AND keep clear of the title).
+    ax.set_ylim(0, max(M["aa_only"]["signmatched_pc3_pos0p25"]["harm_rate"] * 100,
+                       M["aa_pc2"]["signmatched_pc3_pos0p25"]["harm_rate"] * 100,
+                       25) + 6)
+    ax.set_title("Multi-axis cap closes ~12% of the PC3 blind spot on Gemma 4 31B (reasoning off, n=508/cell)\n"
+                 "Dotted line = unsteered baseline (10.2%)",
+                 fontsize=11.5, color=C_DARK, pad=12)
     ax.legend(loc="upper left", fontsize=9.5, frameon=False)
     ax.grid(axis="y", alpha=0.25, linestyle="--")
     ax.spines[["top", "right"]].set_visible(False)
@@ -150,14 +156,14 @@ def fig_phase_e_capability() -> None:
     print(pivot)
 
     # --- Matplotlib: 3 grouped bar panels (one per bench), 4 subjects × 3 conditions ---
-    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.4), dpi=140, sharey=False)
+    fig, axes = plt.subplots(1, 3, figsize=(13.8, 4.8), dpi=140, sharey=True)
     cond_colors = {"unsteered": C_GREY, "aa_cap": C_ACCENT, "multi_axis_cap": C_WARN}
     cond_labels = {"unsteered": "Unsteered", "aa_cap": "AA cap", "multi_axis_cap": "AA + PC2 + PC3 cap"}
+    condition_present = ["unsteered", "aa_cap", "multi_axis_cap"]
     for j, (b, blabel) in enumerate(zip(benches, bench_labels)):
         ax = axes[j]
         x = np.arange(len(_SUBJECT_ORDER))
         widths = 0.27
-        condition_present = ["unsteered", "aa_cap", "multi_axis_cap"]
         for k, cond in enumerate(condition_present):
             vals = []
             for sub in _SUBJECT_ORDER:
@@ -170,19 +176,29 @@ def fig_phase_e_capability() -> None:
                 if not np.isnan(val):
                     ax.text(bar.get_x() + bar.get_width() / 2, val + 1.2, f"{val:.1f}",
                             ha="center", va="bottom", fontsize=8, color=C_DARK)
+                else:
+                    # Mark the absent slot with italic "n/a" lifted high enough that
+                    # it can't be misread as a bar of height ~5.
+                    ax.text(bar.get_x() + bar.get_width() / 2, 14, "n/a", ha="center",
+                            va="bottom", fontsize=8.5, color=C_GREY, style="italic")
         ax.set_xticks(x)
         ax.set_xticklabels(["G2 27B", "Qwen 3", "G4 off", "G4 on"], fontsize=9.5)
         ax.set_title(blabel, fontsize=11)
-        ax.set_ylim(0, 110)
+        ax.set_ylim(0, 105)  # uniform across the three panels (sharey=True covers it)
         ax.grid(axis="y", alpha=0.25, linestyle="--")
         ax.spines[["top", "right"]].set_visible(False)
         if j == 0:
             ax.set_ylabel("Score (%)", fontsize=11)
-        if j == 2:
-            ax.legend(loc="lower right", fontsize=9, frameon=False)
+    # Single shared legend below the panels (avoids the asymmetric per-panel legend).
+    handles, lbls = axes[0].get_legend_handles_labels()
+    fig.legend(handles, lbls, loc="lower center", ncol=3, fontsize=9.5,
+               frameon=False, bbox_to_anchor=(0.5, -0.02))
     fig.suptitle("Capability cost of AA cap and multi-axis cap (Phase E, all 4 subjects)",
                  fontsize=12, color=C_DARK, y=1.02)
-    fig.tight_layout()
+    fig.text(0.5, -0.10,
+             "Multi-axis cap (red) was scoped to Gemma 4 31B reasoning-off only — \"n/a\" marks subjects where it was not run.",
+             ha="center", va="top", fontsize=9.5, color=C_DARK)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.96))
     fig.savefig(DOCS / "phase_e_capability.png", bbox_inches="tight")
     plt.close(fig)
 
@@ -243,24 +259,22 @@ def _bca_ci_diff_pseudo(arr: np.ndarray, baseline: float, n_resamples: int, rng)
 
 def fig_ext_b_v_harm_causal() -> None:
     spec = [
-        ("gemma_4_31b_thinking_off", "Gemma 4 31B (reasoning off) — cos(v_harm, AA)=0.05", 0.102),
-        ("gemma_4_31b_thinking_on",  "Gemma 4 31B (reasoning on) — cos(v_harm, AA)=0.56",  0.150),
+        ("gemma_4_31b_thinking_off", "Gemma 4 31B reasoning off  ·  cos(v_harm, AA)=0.05", 0.102),
+        ("gemma_4_31b_thinking_on",  "Gemma 4 31B reasoning on  ·  cos(v_harm, AA)=0.56", 0.150),
     ]
     rng = np.random.default_rng(42)
 
-    fig, axes = plt.subplots(2, 2, figsize=(11.0, 7.2), dpi=140, sharex="col")
-    for row, (sub, label, baseline) in enumerate(spec):
+    # Pre-compute all per-(subject, λ) stats so we can build harmonized y-axis ranges.
+    all_data = []
+    for sub, label, baseline in spec:
         path = REPO / f"results/phase_b/{sub}/extensions/v_harm_causal/rollouts/v_harm_clean_judged.parquet"
         df = pd.read_parquet(path)
         df["harm_binary"] = df["harm_label_primary"].map(_binarize).astype(int)
         df["coherent"] = df["harm_label_primary"].map(_coh).astype(int)
-
-        # Per-λ summary
         rows = []
         for cond, sub_df in df.groupby("condition_id"):
             lam = float(cond.split("_pos")[-1].replace("p", "."))
-            n = len(sub_df)
-            n_coh = int(sub_df["coherent"].sum())
+            n = len(sub_df); n_coh = int(sub_df["coherent"].sum())
             gross = float(sub_df["harm_binary"].mean())
             arr_g = sub_df["harm_binary"].to_numpy()
             ci_g_lo, ci_g_hi = _bca_ci_diff_pseudo(arr_g, baseline, 5000, rng)
@@ -278,64 +292,89 @@ def fig_ext_b_v_harm_causal() -> None:
                          "harm_coh": harm_coh,
                          "lift_c_pp": (harm_coh - baseline) * 100 if not np.isnan(harm_coh) else np.nan,
                          "lift_c_lo_pp": ci_c_lo * 100, "lift_c_hi_pp": ci_c_hi * 100})
-        d = pd.DataFrame(rows).sort_values("lam").reset_index(drop=True)
-        print(f"{sub}:")
-        print(d)
+        all_data.append((sub, label, baseline, pd.DataFrame(rows).sort_values("lam").reset_index(drop=True)))
 
-        # Left panel: gross harm rate, with coherence collapse zone shaded
+    # Harmonize y-axis ranges per COLUMN (gross vs coherence-conditioned) so the
+    # two rows are vertically comparable. Right-column ignores uninformative (coh<0.5)
+    # and bottom-row dominates the negative range; left-column has the coherence-collapse
+    # outlier so it gets its own scale per row.
+    all_g_rows = pd.concat([d for _, _, _, d in all_data])
+    g_lo = float(min(all_g_rows["lift_g_lo_pp"].min(), -2)) - 3
+    g_hi = float(max(all_g_rows["lift_g_hi_pp"].max(), 8)) + 5
+    coh_only_rows = all_g_rows[all_g_rows["coherence"] >= 0.5]
+    c_lo = float(min(coh_only_rows["lift_c_lo_pp"].min(), -2)) - 3
+    c_hi = float(max(coh_only_rows["lift_c_hi_pp"].max(), 8)) + 4
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 7.6), dpi=140, sharex="col")
+    for row, (sub, label, baseline, d) in enumerate(all_data):
+        print(f"{sub}:"); print(d)
+
+        # --- Left panel: gross harm rate ---
         ax_g = axes[row, 0]
-        # Per-λ shading where coherence < 0.5
+        # Coherence-collapse zone shading + legend proxy.
+        coh_zone_drawn = False
         for _, r_ in d.iterrows():
             if r_["coherence"] < 0.5:
-                ax_g.axvspan(r_["lam"] - 0.04, r_["lam"] + 0.04, color="#f6d7d7", alpha=0.55, zorder=0)
-        ax_g.errorbar(d["lam"], d["lift_g_pp"], yerr=[d["lift_g_pp"] - d["lift_g_lo_pp"], d["lift_g_hi_pp"] - d["lift_g_pp"]],
+                ax_g.axvspan(r_["lam"] - 0.04, r_["lam"] + 0.04, color="#f6d7d7",
+                             alpha=0.55, zorder=0,
+                             label=("coherence collapse (coh<0.5)" if not coh_zone_drawn else None))
+                coh_zone_drawn = True
+        ax_g.errorbar(d["lam"], d["lift_g_pp"],
+                      yerr=[d["lift_g_pp"] - d["lift_g_lo_pp"], d["lift_g_hi_pp"] - d["lift_g_pp"]],
                       fmt="o-", color=C_ACCENT, ecolor=C_ACCENT, capsize=4, lw=2, ms=7,
-                      label="Gross harm lift")
-        ax_g.axhline(0, color=C_DARK, lw=0.7)
-        ax_g.axhline(5, color=C_WARN, lw=1.0, linestyle="--", label="+5 pp threshold")
-        ax_g.set_ylabel("Harm lift vs baseline (pp)", fontsize=10)
-        if row == 0:
-            ax_g.set_title("Gross harm (binarized = nonsensical → not harm)", fontsize=11)
-        # Annotate coherence per point
+                      label="Gross harm lift", zorder=3)
+        ax_g.axhline(0, color=C_DARK, lw=0.7, zorder=1)
+        ax_g.axhline(5, color=C_WARN, lw=1.0, linestyle="--", label="+5 pp threshold", zorder=1)
+
+        # Coherence labels: 30 pt offset above the marker so they clear the
+        # error-bar caps and don't crowd the +5 pp threshold line.
         for _, r_ in d.iterrows():
-            ax_g.text(r_["lam"], r_["lift_g_pp"] - 1.8, f"coh={r_['coherence']:.2f}",
-                      ha="center", va="top", fontsize=8.5, color=C_GREY)
-        ax_g.text(0.02, 0.95, label, transform=ax_g.transAxes, fontsize=10,
-                  va="top", ha="left", color=C_DARK, fontweight="600")
+            ax_g.annotate(f"coh={r_['coherence']:.2f}",
+                          xy=(r_["lam"], r_["lift_g_hi_pp"]),
+                          xytext=(0, 8), textcoords="offset points",
+                          ha="center", va="bottom", fontsize=8.5, color=C_GREY)
+
+        # Subplot title (NOT inside the plot frame).
+        ax_g.set_title(f"{label}  —  gross harm" if row == 0 else f"{label}  —  gross harm",
+                       fontsize=10.5, color=C_DARK, pad=8, loc="left")
+
         ax_g.set_xlim(0.05, 0.55); ax_g.set_xticks([0.10, 0.25, 0.50])
-        # Symmetric tight y-range around the gross lifts (so the +5 pp threshold is visible)
-        gmin = float(min(d["lift_g_lo_pp"].min(), d["lift_g_pp"].min(), -2.0))
-        gmax = float(max(d["lift_g_hi_pp"].max(), d["lift_g_pp"].max(), 8.0))
-        ax_g.set_ylim(gmin - 2, gmax + 2)
+        ax_g.set_ylim(g_lo, g_hi)
+        ax_g.set_ylabel("Harm lift vs baseline (pp)", fontsize=10)
         ax_g.grid(axis="y", alpha=0.25, linestyle="--")
         ax_g.spines[["top", "right"]].set_visible(False)
         if row == 1:
             ax_g.set_xlabel("Steering λ", fontsize=10)
-        ax_g.legend(loc="lower left", fontsize=9, frameon=False)
+        # Legend in the upper-right corner where it has empty space (g_hi headroom).
+        ax_g.legend(loc="upper right", fontsize=9, frameon=False)
 
-        # Right panel: coherence-conditioned harm
+        # --- Right panel: coherence-conditioned harm ---
         ax_c = axes[row, 1]
-        # Mask uninformative (coherence < 0.5) — show ghost marker only
         mask_inf = d["coherence"] >= 0.5
         d_inf = d[mask_inf]; d_uninf = d[~mask_inf]
         ax_c.errorbar(d_inf["lam"], d_inf["lift_c_pp"],
                       yerr=[d_inf["lift_c_pp"] - d_inf["lift_c_lo_pp"], d_inf["lift_c_hi_pp"] - d_inf["lift_c_pp"]],
                       fmt="s-", color=C_OK, ecolor=C_OK, capsize=4, lw=2, ms=7,
-                      label="Harm among coherent")
+                      label="Harm among coherent", zorder=3)
+        ax_c.axhline(0, color=C_DARK, lw=0.7, zorder=1)
+        ax_c.axhline(5, color=C_WARN, lw=1.0, linestyle="--", label="+5 pp threshold", zorder=1)
         for _, r_ in d_uninf.iterrows():
-            ax_c.scatter(r_["lam"], 0, marker="x", color=C_GREY, s=80, zorder=5)
-            ax_c.text(r_["lam"], -2.0, f"n_coh={r_['n_coh']}\nuninformative",
-                      ha="center", va="top", fontsize=8.5, color=C_GREY)
-        ax_c.axhline(0, color=C_DARK, lw=0.7)
-        ax_c.axhline(5, color=C_WARN, lw=1.0, linestyle="--")
-        if row == 0:
-            ax_c.set_title("Harm conditioned on coherence", fontsize=11)
+            # Plot the X marker slightly below 0 so it doesn't read as a real
+            # data point at exactly zero on the y=0 reference line.
+            ax_c.scatter(r_["lam"], -2.2, marker="x", color=C_GREY, s=80, zorder=5)
+            ax_c.annotate(f"n_coh={r_['n_coh']}\nuninformative",
+                          xy=(r_["lam"], -2.2),
+                          xytext=(0, -10), textcoords="offset points",
+                          ha="center", va="top", fontsize=8.5, color=C_GREY)
+        ax_c.set_title(f"{label}  —  harm among coherent",
+                       fontsize=10.5, color=C_DARK, pad=8, loc="left")
         ax_c.set_xlim(0.05, 0.55); ax_c.set_xticks([0.10, 0.25, 0.50])
+        ax_c.set_ylim(c_lo, c_hi)
         ax_c.grid(axis="y", alpha=0.25, linestyle="--")
         ax_c.spines[["top", "right"]].set_visible(False)
         if row == 1:
             ax_c.set_xlabel("Steering λ", fontsize=10)
-        ax_c.legend(loc="lower left", fontsize=9, frameon=False)
+        ax_c.legend(loc="upper right", fontsize=9, frameon=False)
 
     fig.suptitle("Ext B: clean v_harm steering (no cap, no DAN attack) on baseline DAN prompts",
                  fontsize=12.5, color=C_DARK, y=1.00)
