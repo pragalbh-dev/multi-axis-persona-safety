@@ -1,0 +1,64 @@
+[phase_b 13:47:01] config: configs/phase_b_qwen_3_32b.yaml; output_dir: results/phase_b/qwen_3_32b
+[phase_b 13:47:02] step 1: skipped (marker exists)
+[phase_b 13:47:02] step 2: steered backend = sglang
+[phase_b 13:47:02] step 2 [1/30] mini_aa_capped_signmatched_pc2_pos0p05
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 768, in <module>
+    main()
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 744, in main
+    n_rows, tps = _run_sglang(args)
+                  ^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 637, in _run_sglang
+    _wait_for_sglang_ready(
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 519, in _wait_for_sglang_ready
+    raise RuntimeError(f"SGLang server failed: matched {m.group(0)!r}\n--- log tail ---\n{tail}")
+RuntimeError: SGLang server failed: matched 'Traceback'
+--- log tail ---
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/scheduler.py", line 3600, in run_scheduler_process
+    scheduler = Scheduler(
+                ^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/scheduler.py", line 385, in __init__
+    self.init_model_worker()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/scheduler.py", line 632, in init_model_worker
+    self.init_tp_model_worker()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/scheduler.py", line 600, in init_tp_model_worker
+    self.tp_worker = TpModelWorker(**worker_kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/tp_worker.py", line 261, in __init__
+    self._init_model_runner()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/managers/tp_worker.py", line 344, in _init_model_runner
+    self._model_runner = ModelRunner(
+                         ^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/model_executor/model_runner.py", line 427, in __init__
+    self.initialize(pre_model_load_memory)
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/model_executor/model_runner.py", line 665, in initialize
+    register_forward_hooks(self.model, server_args.forward_hooks)
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/model_executor/hook_manager.py", line 33, in register_forward_hooks
+    hook = hook_factory(config) if hook_factory else None
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/steering/sglang_hook_factories.py", line 185, in capping_factory
+    v = _load_vector(config["vector_path"], config.get("vector_key", "vector"))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/steering/sglang_hook_factories.py", line 61, in _load_vector
+    raise KeyError(f"key {key!r} not in {p}; available: {list(tensors)}")
+KeyError: "key 'vector' not in results/phase_b/qwen_3_32b/extraction/vectors/aa_L46.safetensors; available: ['v']"
+
+[2026-05-01 13:56:11] Received sigquit from a child process. It usually means the child failed.
+[sglang] launching server: /home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/bin/python -m sglang.launch_server --model-path Qwen/Qwen3-32B --tp ... (hooks: 9)
+[W501 13:56:16.470475007 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/phase_b.py", line 863, in <module>
+    main()
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/phase_b.py", line 830, in main
+    mini_paths = step_2_mini_lambda_sweep(cfg, out_dir, setup)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/phase_b.py", line 375, in step_2_mini_lambda_sweep
+    res = run_in_subprocess(
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/utils/model_runner.py", line 136, in run_in_subprocess
+    raise WorkModuleError(
+src.utils.model_runner.WorkModuleError: work_module=src.evaluation.run_subject_rollouts exited with code 1 after 554.9s. Args at results/phase_b/qwen_3_32b/.step2_mini_aa_capped_signmatched_pc2_pos0p05.work.args.json; output expected at results/phase_b/qwen_3_32b/.step2_mini_aa_capped_signmatched_pc2_pos0p05.work.json.

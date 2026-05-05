@@ -1,0 +1,34 @@
+[plan_b 07:13:35] loaded config from /home/ubuntu/research/multi-axis-persona-safety/configs/plan_b_gemma_4_31b_thinking_off.yaml (model_id=gemma_4_31b_thinking_off)
+[plan_b 07:13:35] step 6 in --skip; venv guard bypassed (no SGLang needed for Phase A scope)
+[plan_b 07:13:36] step 1a: 275 role names found
+[plan_b 07:13:36] step 1a: 5 default-Assistant variants
+[plan_b 07:13:36] step 1a: 240 extraction questions loaded
+[plan_b 07:13:36] step 1a: wrote 8300 prompts to results/phase_a/gemma_4_31b_thinking_off/role_rollout_prompts.parquet
+/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 768, in <module>
+    main()
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 740, in main
+    n_rows, tps = _run_vllm(args)
+                  ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/evaluation/run_subject_rollouts.py", line 79, in _run_vllm
+    model_cfg = rt[args["model_id"]]
+                ~~^^^^^^^^^^^^^^^^^^
+KeyError: 'gemma_4_31b_thinking_off'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/plan_b.py", line 1348, in <module>
+    main()
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/plan_b.py", line 1285, in main
+    rollouts_path = step_1a_generate_role_rollouts(cfg, out_dir)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/experiments/plan_b.py", line 154, in step_1a_generate_role_rollouts
+    res = run_in_subprocess(
+          ^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/src/utils/model_runner.py", line 136, in run_in_subprocess
+    raise WorkModuleError(
+src.utils.model_runner.WorkModuleError: work_module=src.evaluation.run_subject_rollouts exited with code 1 after 21.5s. Args at results/phase_a/gemma_4_31b_thinking_off/.step1a.work.args.json; output expected at results/phase_a/gemma_4_31b_thinking_off/.step1a.work.json.

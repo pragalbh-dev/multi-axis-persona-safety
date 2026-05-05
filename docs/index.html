@@ -160,13 +160,13 @@
 <body>
   <main>
     <h1>Multi-Axis Persona Safety</h1>
-    <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on four open-weight models &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores. The signal replicates universally; defense robustness does not &mdash; on one model the cap fails outright at zero attack and is adversarially exploited for a &plus;12-point harm-rate increase at near-perfect coherence.</p>
+    <p class="subtitle">Replicating Lu et&nbsp;al.'s Assistant-Axis activation cap on four open-weight models &mdash; and asking whether the residual stream under jailbreak still encodes harm-relevant signal in directions the cap ignores. The signal replicates universally; defense robustness does not &mdash; on one model the cap fails outright at zero attack and is adversarially exploited for a &plus;12-point harm-rate increase at near-perfect coherence. Multi-axis capping closes ~12% of that blind spot at 99.8% coherence; capability cost decouples sharply from defense effectiveness across the four models.</p>
 
     <p class="meta">
       Four open-weight models &middot; Gemma&nbsp;2&nbsp;27B, Qwen&nbsp;3&nbsp;32B, Gemma&nbsp;4&nbsp;31B (with extended-reasoning mode on and off) &middot; DAN&nbsp;+&nbsp;Shah-reconstructed jailbreak prompts &middot;
       <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety">repo on GitHub</a>
       <br />
-      Jump to: <a href="#what-replicates">what replicates across all four models</a> &middot; <a href="#where-they-diverge">where the four models diverge</a> &middot; <a href="#deep-dive-gemma2">deep dive on Gemma 2 27B</a> &middot; <a href="#follow-up-findings">extension findings</a>.
+      Jump to: <a href="#what-replicates">what replicates across all four models</a> &middot; <a href="#where-they-diverge">where the four models diverge</a> &middot; <a href="#multi-axis-defense">multi-axis defense</a> &middot; <a href="#capability-cost">capability cost</a> &middot; <a href="#causal-vs-predictive">causal vs predictive</a> &middot; <a href="#deep-dive-gemma2">deep dive on Gemma 2 27B</a> &middot; <a href="#follow-up-findings">extension findings</a>.
     </p>
 
     <h2>Why this work</h2>
@@ -195,13 +195,15 @@
 
     <h2>What this study found</h2>
     <div class="tldr">
-      Three findings across the four models:
+      Five findings across the four models:
       <ol style="margin: 12px 0 0; padding-left: 22px;">
         <li><strong>The orthogonal-to-Assistant-direction harm signal replicates across all four models.</strong> Adding the leading persona principal components to a logistic LASSO lifts harm-prediction AUC by <strong>+0.10 to +0.31</strong> over the Assistant-direction-alone baseline; every 95% BCa CI excludes zero. The blind spot Lu et&nbsp;al.'s single-direction cap leaves behind is a general feature, not a Gemma&nbsp;2&nbsp;27B artifact.</li>
         <li><strong>The cap defends in three of four models &mdash; and outright fails in the fourth.</strong> On Gemma&nbsp;4&nbsp;31B with reasoning off, the Assistant-direction cap <em>increases</em> harm at zero attack (10.2% &rarr; 11.2%) and a single harm-aligned principal-component attack lifts harm to <strong>23.6%</strong> at <strong>99.8% coherence</strong> &mdash; a +12.4 percentage-point adversarial recovery on the headline mitigation. Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B with reasoning on resist all attacks tested at coherence-preserving steering magnitudes. The number of LASSO-selected components does not predict robustness (reasoning-on selects nine components and defends; reasoning-off selects one and fails).</li>
         <li><strong>Extended reasoning reorganizes the safety geometry.</strong> With reasoning on, the probe layer where role information is most linearly separable shifts from middle depth (~20%) to the network's final layer (98% depth); the Assistant direction alone becomes a much stronger harm classifier (AUC 0.81 vs 0.58 with reasoning off); and the empirical harm direction becomes substantially aligned with the Assistant direction (cos = +0.56) where it is near-orthogonal in the other three models (cos &isin; [&minus;0.36, +0.13]).</li>
+        <li><strong>Multi-axis capping partially closes the blind spot on the failure model.</strong> Adding harm-aligned PC2 and PC3 caps to the Assistant-direction cap on Gemma&nbsp;4&nbsp;31B reasoning-off reduces the PC3-attack harm rate from 23.6% to <strong>22.05%</strong> at <strong>99.8% coherence</strong> &mdash; a 1.57&nbsp;pp reduction, ~12% of the 13.4&nbsp;pp adversarial recovery margin. The mechanism is geometric: PC2/PC3 caps fire <em>before</em> the PC3 attack injects at the same layer, so the cap clamps pre-attack activations and the attack-perturbed signal propagates downstream uncapped. Multi-axis capping is real but not transformative; full closure requires breaking the same-layer hook ordering or capping at later layers.</li>
+        <li><strong>Capability cost decouples sharply from defense effectiveness.</strong> The Assistant-direction cap is essentially free on Gemma&nbsp;2&nbsp;27B and Gemma&nbsp;4&nbsp;31B reasoning-off (&le;1&nbsp;pp loss on every bench tested) but catastrophic on Qwen&nbsp;3&nbsp;32B (IFEval &minus;41&nbsp;pp, GSM8k &minus;33&nbsp;pp) and Gemma&nbsp;4&nbsp;31B reasoning-on (IFEval <strong>&minus;50&nbsp;pp</strong>, EQ-Bench &minus;16&nbsp;pp). Cost and effectiveness are not aligned: Qwen's cap is fully effective <em>and</em> expensive; reasoning-off's cap is ineffective <em>and</em> free. Multi-axis cap on Gemma&nbsp;4&nbsp;31B reasoning-off keeps the loss within ~1.5&nbsp;pp.</li>
       </ol>
-      <p style="margin: 14px 0 0;">The takeaway: the orthogonal-to-Assistant-direction blind spot is a general feature of role-conditioned residual streams, not a single-model artifact &mdash; but defense behaviour around it is heterogeneous, and a recommendation that holds on three of four models can fail on a fourth in a way that is not just incomplete but adversarially exploitable.</p>
+      <p style="margin: 14px 0 0;">The takeaway: the orthogonal-to-Assistant-direction blind spot is a general feature of role-conditioned residual streams, not a single-model artifact &mdash; but defense behaviour around it is heterogeneous in two dimensions at once. Effectiveness varies (one cap-failure model out of four), capability cost varies (50&nbsp;pp swing on a single benchmark), and the two don't track each other. A deployable recommendation needs to know which regime each target model is in.</p>
     </div>
 
     <h2 id="what-replicates">What replicates across all four models</h2>
@@ -295,6 +297,84 @@
         Per-direction dose-response of harm rate on the cap-defended model at increasing steering magnitude λ, for each of the three new models. Qwen 3 32B (left): all directions stay near zero through the coherence-preserving λ range. Gemma 4 31B reasoning-off (middle): harm-aligned PC3 and the null-space attack rise sharply with λ. Gemma 4 31B reasoning-on (right): the defended model is robust, with all directions remaining near or below the defended baseline. Hover reveals coherence at each point.
       </figcaption>
     </figure>
+
+    <h2 id="multi-axis-defense">Multi-axis defense &mdash; partial closure on the failure model</h2>
+    <p>
+      The orthogonal blind spot Lu et&nbsp;al.'s single-direction cap leaves behind is, in principle, exactly the gap a multi-axis cap should close: cap the Assistant direction <em>plus</em> the leading harm-aligned persona PCs jointly, calibrate per-axis &tau; against role projections, and the geometrically-aware defense should clamp the same activations the PC attack relies on. We test this directly on the failure model &mdash; Gemma&nbsp;4&nbsp;31B with reasoning off &mdash; on a 508-prompt held-out test split.
+    </p>
+    <p>
+      Per-axis &tau; is calibrated on a 200-prompt validation subset by sweeping &tau; &isin; {p1, p10, p25, p50, p75} of each axis's role-positive projection distribution at the probe layer L*=14. The chosen pair (&tau;_PC2 = p10, &tau;_PC3 = p25) maximises harm reduction under the strongest available attack (harm-aligned PC3 at &lambda;=0.25) subject to a 90% coherence floor. A first attempt that re-used PC2/PC3 as cap directions across all eight Assistant-cap layers (27&ndash;34) collapsed coherence to 0% at every &tau; tested &mdash; the per-layer projection magnitudes were 80&ndash;180 units larger than the validation distribution implied, and stacking eight clipped layers nuked the residual stream. The corrected design caps each persona PC at its native extraction layer (L*=14) only, leaving the Assistant cap unchanged across the full 27&ndash;34 range.
+    </p>
+    <figure>
+      <iframe src="figures/phase_d_multi_axis_closure.html" height="500" loading="lazy" title="Multi-axis cap closure on Gemma 4 31B (reasoning off)"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;H.</span>
+        Harm rate on the held-out test split (n=508/cell) under three defenses (Assistant-direction cap only / +PC2 cap / +PC2+PC3 cap) and three attack conditions (no attack, null-space attack at &lambda;=0.25, harm-aligned PC3 attack at &lambda;=0.25). The +PC3 column is the headline blind-spot recovery (23.6% under AA-cap-only); adding the PC3 cap reduces it to <strong>22.05%</strong> &mdash; a 1.57&nbsp;pp / ~12% closure of the 13.4&nbsp;pp PC3-attack-recovery margin, at 99.8% coherence. The PC2 cap alone has zero or slightly negative effect on the PC3 attack column (24.6% &gt; 23.6%); the closure comes from the PC3 cap. The null-space-attack column also reduces by 1.18&nbsp;pp (18.7% &rarr; 17.5%).
+      </figcaption>
+    </figure>
+    <p>
+      <strong>Why the closure isn't larger.</strong> At the same probe layer, the cap fires <em>before</em> the attack injection in the forward pass &mdash; the steering library registers cap hooks, then steer hooks, and PyTorch fires forward hooks in registration order. So at L*=14: the cap clamps pre-attack activations, the attack adds a harm-positive perturbation immediately afterwards, and the perturbed signal propagates through L=15..26 uncapped. The Assistant-direction cap at layers 27&ndash;34 catches some residual harm but cannot fully recover. Closing the gap entirely would require either (a) reversing hook order so the cap fires after the attack at the same layer, or (b) propagating the L*=14 PC2/PC3 cap directions forward to deeper layers &mdash; the latter is what broke coherence in the first calibration attempt. Deployment-grade multi-axis defense looks tractable but needs per-layer cap-direction refit.
+    </p>
+    <p>
+      <strong>Why we ran this only on the failure model.</strong> Multi-axis cap is the right experiment specifically when single-axis cap leaves a measurable adversarial gap. Qwen&nbsp;3&nbsp;32B's AA-cap is already saturating (no harm-aligned attack at any tested &lambda; recovers more than 1.4&nbsp;pp); Gemma&nbsp;4&nbsp;31B reasoning-on similarly. Multi-axis cap calibration on those two would either be redundant or could collapse coherence the way it did on reasoning-off's first attempt &mdash; <strong>extending the multi-axis defense to the other three subjects is left for follow-up work, with calibration logic adjusted per the lesson here</strong> (single-layer cap at native L*, &tau; per axis from its own role distribution).
+    </p>
+
+    <h2 id="capability-cost">Capability cost &mdash; AA-cap is not free everywhere</h2>
+    <p>
+      The harm reductions reported above are only half the picture. A defense that reduces harm by 9&nbsp;pp but kills 50&nbsp;pp of instruction-following is not deployable. We measure the capability cost on three benchmarks &mdash; IFEval (instruction following, n=541), GSM8k (math, n=1000), EQ-Bench (emotional-intelligence, n=171) &mdash; under unsteered, Assistant-direction-cap, and (on the failure model) multi-axis-cap conditions.
+    </p>
+    <figure>
+      <iframe src="figures/phase_e_capability.html" height="500" loading="lazy" title="Capability cost across 4 subjects × 3 benches"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;I.</span>
+        Capability score (%) per (subject &times; condition &times; benchmark). Grey: unsteered baseline. Blue: Assistant-direction cap. Red: AA + PC2 + PC3 cap (Gemma&nbsp;4&nbsp;31B reasoning-off only).
+      </figcaption>
+    </figure>
+    <p>
+      <strong>The cost-effectiveness map across the four models:</strong>
+    </p>
+    <ul>
+      <li><strong>Gemma&nbsp;2&nbsp;27B &mdash; cap is free and effective.</strong> AA-cap loss is &le;0.4&nbsp;pp on every benchmark (IFEval 84.9 &rarr; 84.8, GSM8k 84.3 &rarr; 83.9, EQ-Bench 87.1 &rarr; 87.2). The cap also reduces baseline harm by 13.0&nbsp;pp. This is the regime Lu et&nbsp;al.'s single-axis recommendation was validated against.</li>
+      <li><strong>Qwen&nbsp;3&nbsp;32B &mdash; cap is effective but catastrophically expensive.</strong> IFEval 90.1 &rarr; <strong>49.2 (&minus;41&nbsp;pp)</strong>, GSM8k 91.5 &rarr; <strong>58.4 (&minus;33&nbsp;pp)</strong>, EQ-Bench 86.9 &rarr; 86.1 (&minus;0.8&nbsp;pp). The cap fully blocks every harm-aligned attack we tested, but at the price of breaking instruction-following and arithmetic reasoning. Whether a less-aggressive &tau; would preserve more capability while still defending is open.</li>
+      <li><strong>Gemma&nbsp;4&nbsp;31B reasoning-off &mdash; cap is free but ineffective.</strong> AA-cap loss is &le;0.8&nbsp;pp across all benches (IFEval 94.1 &rarr; 93.3, GSM8k 90.4 &rarr; 89.9, EQ-Bench 88.7 &rarr; 88.8). The multi-axis-cap (AA + PC2 + PC3) keeps the loss within 1.5&nbsp;pp on each bench (IFEval 93.4, GSM8k 88.9, EQ-Bench 88.7). This is good news for the multi-axis closure result above &mdash; the capability cost of partially closing the blind spot is essentially zero.</li>
+      <li><strong>Gemma&nbsp;4&nbsp;31B reasoning-on &mdash; cap is effective but devastating to reasoning.</strong> IFEval 93.7 &rarr; <strong>44.2 (&minus;50&nbsp;pp)</strong>, EQ-Bench 88.7 &rarr; 72.8 (&minus;16&nbsp;pp). GSM8k 90.6 &rarr; 90.0 (&minus;0.6&nbsp;pp) is the surprising exception &mdash; arithmetic reasoning survives. The IFEval collapse is the largest single capability-cost number in the four-model panel. Whether reasoning-mode-specific cap calibration (lower &tau;, fewer cap layers, or a different layer range entirely) would restore IFEval is open.</li>
+    </ul>
+    <p>
+      <strong>The decoupling.</strong> Effectiveness and cost are not aligned across the four models. Qwen and reasoning-on have effective caps with high cost; reasoning-off has a free cap with no effect; Gemma&nbsp;2&nbsp;27B is the unique "free and effective" combination. A deployment recommendation that reads "apply the Assistant-direction cap" treats four very different operating points as one. The failure mode is not "the cap doesn't work on every model" &mdash; it is "the cap's tradeoff curve is heterogeneous and the per-model regime needs measurement before deployment."
+    </p>
+    <p style="font-size:14px; color:var(--muted); margin-top:14px;">
+      MMLU-Pro was dropped from this evaluation per project budget; multi-axis-cap capability rows for Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B reasoning-on are absent because the multi-axis defense was scoped to the failure model only (see preceding section). Both gaps are pickup work and will be done later if a reviewer asks for the symmetric numbers.
+    </p>
+
+    <h2 id="causal-vs-predictive">Causal vs predictive &mdash; clean v_harm steering on baseline prompts</h2>
+    <p>
+      The cross-model AUC lift in Figure&nbsp;A is a <em>predictive</em> finding: per-prompt activations carry harm-relevant signal in directions orthogonal to the Assistant direction. The natural question is whether that signal is also <em>causal</em> &mdash; if we steer the residual stream along the empirical harm direction <code>v_harm = mean(harm_activations) &minus; mean(safe_activations)</code> on clean baseline prompts, with no cap and no jailbreak attack, does harm rate go up?
+    </p>
+    <p>
+      We run the test on the two Gemma&nbsp;4&nbsp;31B subjects (the geometries where v_harm is most informative): reasoning-off has cos(v_harm, AA)&nbsp;=&nbsp;<strong>0.05</strong>, the maximally-orthogonal case across the four subjects; reasoning-on has cos(v_harm, AA)&nbsp;=&nbsp;<strong>0.56</strong>, the only subject where v_harm overlaps the Assistant direction substantially. Steering coefficient &lambda; &isin; {0.10, 0.25, 0.50}, n=508 baseline DAN prompts per cell, no cap, no attack vector other than v_harm itself.
+    </p>
+    <figure>
+      <iframe src="figures/ext_b_v_harm_causal.html" height="640" loading="lazy" title="Clean v_harm causal test on g4_off and g4_on"></iframe>
+      <figcaption>
+        <span class="figlabel">Figure&nbsp;J.</span>
+        Per-&lambda; harm-rate lift versus the unsteered baseline. <strong>Left column &mdash; gross harm</strong> (binarized: <code>nonsensical &rarr; not harm</code> per the paper's rule). <strong>Right column &mdash; harm conditioned on coherence</strong> (excludes <code>nonsensical</code> rows). Top row: reasoning-off (baseline 10.2%). Bottom row: reasoning-on (baseline 15.0%). Red dashed line at +5&nbsp;pp marks the pre-registered &ldquo;causal&rdquo; threshold. Pink-shaded cells indicate the coherence-collapse zone (coherence &lt;&nbsp;50%). Error bars are BCa 95% CIs over 5,000 bootstrap resamples. Coherence per &lambda; is annotated below each gross-harm point.
+      </figcaption>
+    </figure>
+    <p>
+      <strong>Reasoning-off &mdash; weak causal effect, well below the threshold.</strong> At &lambda;=0.10 (full coherence), harm lifts by <strong>+4.2&nbsp;pp</strong> (10.2% &rarr; 14.4%) with the coherence-conditioned 95% CI <strong>[+1.0, +7.3] excluding zero</strong>. The lift is real but does not clear the +5&nbsp;pp pre-registered threshold. At &lambda;=0.25 the lift drops to +2.6&nbsp;pp and the CI touches zero &mdash; the response is non-monotonic in &lambda;, suggesting early coherence drift starting to suppress signal even at 95% coherence. At &lambda;=0.50 the model collapses (coherence 0.2%, only 1 of 508 responses survives classification); the gross harm rate of 0% is therefore <em>uninformative</em> about causality, not evidence against it.
+    </p>
+    <p>
+      <strong>Reasoning-on &mdash; v_harm is anti-causal at all coherent &lambda;.</strong> Gross and coherence-conditioned harm both drop by ~11&nbsp;pp (15.0% &rarr; ~4%) at every &lambda; tested, with coherence holding at 99.6% across the sweep. The mechanism is geometric: cos(v_harm, PC1)&nbsp;=&nbsp;0.78 with PC1&nbsp;&approx;&nbsp;Assistant-direction at this subject's probe layer (L*=59), so adding v_harm steers the residual stream toward the Assistant pole rather than away from it. The behavioural surface, however, isn't &ldquo;more refusals&rdquo; (refusal rate slightly drops, 68.8% &rarr; 63.6%) but <strong>off-topic deflection</strong> &mdash; <code>out_of_context</code> labels jump from 3.2% baseline to 18.9% at &lambda;=0.10. The model stays grammatical and on-task in form while disengaging from the harmful question.
+    </p>
+    <p>
+      <strong>What this tells us about the +12.4&nbsp;pp blind spot.</strong> The Phase&nbsp;B headline (PC3 attack on Gemma&nbsp;4&nbsp;31B reasoning-off lifts harm by +12.4&nbsp;pp <em>under</em> the Assistant-direction cap) cannot be reproduced by clean v_harm steering &mdash; the largest coherent v_harm lift is +4.2&nbsp;pp, well short of the under-cap recovery. The implication is that PC3's adversarial value is a <em>cap-failure mode</em>, not a residual-stream harm direction we can simply steer along: PC3 attack works specifically because the Assistant-cap fires before it at the probe layer (the same hook-ordering mechanism that limited multi-axis closure to ~12% above), not because PC3 contains "more harm" than other directions in some abstract sense. v_harm steering on its own runs into the model's coherence ceiling well before producing comparable harm.
+    </p>
+    <p>
+      A finer &lambda; sweep through {0.30, 0.35, 0.40, 0.45} on reasoning-off would map the coherence-decay window where v_harm "wants to" produce harm but hasn't yet collapsed the model. We did not run it &mdash; the existing data is sufficient to support the qualitative claim above (clean v_harm has weak causal effect; the under-cap PC3 attack is the harder-to-defend pathway). A reader who wants the threshold-call settled either way should treat that fine sweep as the natural follow-up.
+    </p>
+    <p>
+      <strong>Comparator: Gemma&nbsp;2&nbsp;27B under cap.</strong> The follow-up section below shows that AA-cap + v_harm steering at &lambda;=0.10 on Gemma&nbsp;2&nbsp;27B recovers harm to 14.6% at 76.7% coherence (19.0% among coherent responses) &mdash; an unambiguous causal lift in the coherent regime. But on Gemma&nbsp;2&nbsp;27B, cos(v_harm, PC2)&nbsp;=&nbsp;&minus;0.71: v_harm is essentially anti-PC2, and PC2-attack-under-cap on the same model recovers 11.1% harm at 91% coherence. The G2 v_harm result is therefore PC2-attack in disguise, not evidence of a separable causal harm direction. The cross-model picture is consistent: v_harm is parallel to whichever role-PC dominates the harm-vs-safe contrast at the probe layer; when that PC happens to be one the cap fails to clamp (G2 PC2, g4_off PC3), the under-cap attack is causally exploitable; when it doesn't (Qwen, g4_on), the cap holds.
+    </p>
 
     <h2>Headline numbers &mdash; across models</h2>
     <div class="claim-card">
@@ -531,7 +611,8 @@
     <ul>
       <li><strong>Cross-model coverage is partial.</strong> Four models, three of them Gemma-family. The cross-architecture claim rests on Qwen&nbsp;3&nbsp;32B alone; broader architecture coverage (e.g., Llama, Mistral, DBRX) is open.</li>
       <li><strong>One attack distribution.</strong> DAN persona-jailbreak prompts are the attack class for all four models. Cross-dataset replication on Shah-reconstructed synthetic jailbreaks (Shah et&nbsp;al. 2311.03348 methodology) is currently Gemma&nbsp;2&nbsp;27B only.</li>
-      <li><strong>No capability evaluation.</strong> The defense is measured on harm only; the harm-vs-capability Pareto frontier (IFEval, MMLU-Pro, GSM8k, EQ-Bench) is not reported here. Capability-vs-harm sweeps on all four models are forthcoming.</li>
+      <li><strong>Capability evaluation is partial.</strong> Three benches reported (IFEval, GSM8k, EQ-Bench) across all four models; MMLU-Pro is dropped per project budget and revivable on demand. Multi-axis-cap capability rows for Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B reasoning-on are absent because the multi-axis defense is scoped to the failure model only &mdash; both gaps are pickup work and will be done if a reviewer asks for the symmetric numbers.</li>
+      <li><strong>Ext B fine &lambda; sweep deferred.</strong> The clean v_harm causal test on Gemma&nbsp;4&nbsp;31B reasoning-off used &lambda; &isin; {0.10, 0.25, 0.50}. The intermediate window &lambda; &isin; {0.30, 0.35, 0.40, 0.45} &mdash; where coherence is decaying but not yet collapsed and v_harm might still be steering toward harm &mdash; was not probed. The +4.2&nbsp;pp lift at &lambda;=0.10 (CI excludes zero, below the +5&nbsp;pp threshold) is therefore conservative on the upper bound; whether the lift would clear the threshold inside the coherence-decay window is open.</li>
       <li><strong>Reasoning-mode comparison is within a single model.</strong> The geometry-reorganization-with-reasoning result (probe layer at 98% depth; harm direction substantially aligned with the Assistant direction) is on Gemma&nbsp;4&nbsp;31B only. Whether this generalizes to other reasoning-capable models is open.</li>
       <li><strong>Probe-layer-at-final-layer caveat.</strong> The probe layer at 98% depth on Gemma&nbsp;4&nbsp;31B with reasoning on sits at the network's penultimate layer. Whether this is a genuine final-layer phenomenon or an artifact of the role-separation argmax criterion (which favours later layers when role information accumulates) is open.</li>
       <li><strong>The follow-up extension findings are Gemma 2 27B only.</strong> Cross-dataset replication on Shah jailbreaks, the empirical-harm-direction decomposition, the sign-corrected per-axis attack arm, and the multi-axis defense interaction matrix are all currently single-model. Replication on the three new models &mdash; particularly the multi-axis defense interaction matrix &mdash; is the natural next step.</li>
@@ -548,10 +629,10 @@
         <strong>Is the harm signal Assistant-direction-aligned or genuinely orthogonal?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED with nuance.</span> Orthogonal in three of four models &mdash; cos(empirical harm direction, Assistant direction) is &minus;0.36 on Gemma&nbsp;2&nbsp;27B, +0.13 on Qwen&nbsp;3&nbsp;32B, and +0.05 on Gemma&nbsp;4&nbsp;31B with reasoning off. The exception is Gemma&nbsp;4&nbsp;31B with reasoning on, where the harm direction becomes substantially aligned with the Assistant direction (cos = +0.56). Extended reasoning reorganizes the geometry; the original H1 framing holds in the non-reasoning regime.
       </li>
       <li>
-        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED &mdash; causal on two of four models.</span> Empirical-harm-direction-direct steering on Gemma&nbsp;2&nbsp;27B at &lambda;=0.10 lifts harm to 14.6% (+12.8&nbsp;pp above the cap-defended baseline; coherence 76.7%). Harm-aligned PC3 steering on Gemma&nbsp;4&nbsp;31B with reasoning off at &lambda;=0.25 lifts harm to 23.6% (+12.4&nbsp;pp; coherence 99.8%). Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B with reasoning on resist all harm-aligned attacks tested at coherence-preserving steering magnitudes &mdash; whether stronger attacks at higher &lambda; would succeed before coherence collapse is open.
+        <strong>Do the harm-predictive directions <em>cause</em> harm, or merely correlate with it?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED with nuance.</span> Three findings, in order of strength: <em>(a)</em> Harm-aligned PC3 steering on Gemma&nbsp;4&nbsp;31B reasoning-off, applied <em>under</em> the Assistant-direction cap at &lambda;=0.25, lifts harm to 23.6% at 99.8% coherence (+12.4&nbsp;pp above the defended baseline) &mdash; an unambiguous causal exploit of a cap-failure mode. <em>(b)</em> Empirical-harm-direction (v_harm) steering on Gemma&nbsp;2&nbsp;27B under cap at &lambda;=0.10 lifts harm to 14.6% (19.0% among coherent responses) &mdash; also causal in the coherent regime, but the geometric reason is cos(v_harm,&nbsp;PC2)&nbsp;=&nbsp;&minus;0.71 on this subject: v_harm is anti-PC2, and PC2-attack-under-cap recovers harm independently. The G2 v_harm result is PC2-attack in disguise, not evidence of a separable causal harm direction. <em>(c)</em> Clean v_harm steering (no cap, no jailbreak attack) at coherence-preserving &lambda; on the two Gemma&nbsp;4&nbsp;31B subjects produces only +4.2&nbsp;pp (reasoning-off, CI [+1.0, +7.3] excludes zero but below the +5&nbsp;pp threshold) or anti-causal suppression (reasoning-on, &minus;11&nbsp;pp at all &lambda;). The implication: the orthogonal blind spot is causally exploitable specifically as a <em>cap-failure mode</em>, not as a residual-stream harm direction one can simply steer along on undefended models. See the Causal vs predictive section above for the full coherence-conditioned read.
       </li>
       <li>
-        <strong>Does capping the Assistant direction plus higher persona PCs jointly close the orthogonal signal?</strong> <span style="color:var(--accent-warn); font-weight:600;">PARTIAL on Gemma 2 27B; in progress on the other three models.</span> Single extra axis (Assistant direction&nbsp;+&nbsp;harm-aligned PC2) preserves coherence at 91% and stabilizes refusal style under matched attack but does not reduce binary harm rate. Stacking three extra axes at the same percentile breaks coherence entirely. The blind spot is real but closing it without coherence loss requires per-axis Pareto-optimized thresholds. Cross-model multi-axis defense interaction matrices on Qwen&nbsp;3&nbsp;32B and the two Gemma&nbsp;4&nbsp;31B configurations are in progress.
+        <strong>Does capping the Assistant direction plus higher persona PCs jointly close the orthogonal signal?</strong> <span style="color:var(--accent-warn); font-weight:600;">RESOLVED on the failure model with partial closure (~12%); follow-up needed for full closure.</span> On Gemma&nbsp;4&nbsp;31B reasoning-off, AA + PC2 + PC3 cap at calibrated per-axis &tau; (PC2 at p10, PC3 at p25, native L*=14 only) reduces the PC3-attack harm rate from 23.6% to <strong>22.05%</strong> at 99.8% coherence &mdash; a 1.57&nbsp;pp / ~12% closure of the 13.4&nbsp;pp adversarial recovery margin. PC2 cap alone has zero or slightly negative effect; the PC3 cap carries the closure. Mechanism: the cap fires <em>before</em> the attack at the same probe layer, so the cap clamps pre-attack activations and the attack-perturbed signal propagates downstream uncapped. Full closure would require either reversing hook order at the same layer or refitting per-layer cap directions for L&nbsp;=&nbsp;15..34 &mdash; both are tractable follow-ups. <em>Multi-axis cap on Gemma&nbsp;2&nbsp;27B follow-up</em> (single-extra-axis caps under the multi-axis-attack interaction matrix) shows the AA+PC2 combination preserves coherence at 91% and stabilizes refusal style but does not reduce binary harm rate, while stacking three extra axes at p25 each collapses coherence entirely &mdash; consistent with the L*-only single-layer rule used on the failure model. <strong>Multi-axis cap on Qwen&nbsp;3&nbsp;32B and Gemma&nbsp;4&nbsp;31B reasoning-on are absent &mdash; pickup work, will be done later.</strong>
       </li>
       <li>
         <strong>What do the higher persona PCs actually do to model voice when they preserve coherence?</strong> <em>Carries forward.</em> Mechanistic interpretation of which persona dimensions PC2/PC3/etc. govern (Chen et&nbsp;al.-style persona-vectors thread) remains open. Particularly relevant given that on Gemma&nbsp;4&nbsp;31B with reasoning off, the LASSO selects PC4 but the strongest adversarial attack steers along PC3.
@@ -563,7 +644,7 @@
         <strong>What predicts defense robustness across models?</strong> <em>NEW &mdash; carries forward.</em> The number of LASSO-selected components is not predictive: reasoning-on selects nine and defends; reasoning-off selects one and fails. LASSO selection and adversarial exploitability are also dissociable on reasoning-off (LASSO picks PC4; the strongest attack steers along PC3). Candidate predictors to evaluate as more models come online: cos(empirical harm direction, Assistant direction), the Assistant-direction-only AUC, and the per-model probe-layer depth as a fraction of network depth.
       </li>
       <li>
-        <strong>What does the harm-vs-capability Pareto look like across the four models?</strong> <em>NEW &mdash; carries forward.</em> Capability evaluation (IFEval, MMLU-Pro, GSM8k, EQ-Bench) on the four models under unsteered, Assistant-direction-cap, and multi-axis-cap conditions is the next experiment. Without it, the headline harm reductions cannot be priced against capability cost.
+        <strong>What does the harm-vs-capability Pareto look like across the four models?</strong> <span style="color:var(--accent-ok); font-weight:600;">RESOLVED across IFEval / GSM8k / EQ-Bench.</span> Cost decouples sharply from effectiveness: AA-cap is essentially free on Gemma&nbsp;2&nbsp;27B (&le;0.4&nbsp;pp loss on every bench) and Gemma&nbsp;4&nbsp;31B reasoning-off (&le;1&nbsp;pp), but catastrophic on Qwen&nbsp;3&nbsp;32B (IFEval &minus;41&nbsp;pp, GSM8k &minus;33&nbsp;pp) and Gemma&nbsp;4&nbsp;31B reasoning-on (IFEval &minus;50&nbsp;pp, EQ-Bench &minus;16&nbsp;pp). Multi-axis cap on the failure model adds at most 1.5&nbsp;pp on top of the (already negligible) AA-cap loss. The deployable-defense regime is the (effective AND cheap) intersection &mdash; only Gemma&nbsp;2&nbsp;27B occupies it cleanly out of the four models. Full table in the Capability cost section above. MMLU-Pro is dropped from this evaluation per project budget; multi-axis-cap rows for Qwen and reasoning-on are absent (defense is scoped to the failure model only) and are pickup work for later.
       </li>
     </ol>
 
@@ -608,7 +689,31 @@
             <li><code>results/phase_b/gemma_4_31b_thinking_on/harm_direction.json</code></li>
           </ul>
         </li>
-        <li><strong>Cross-model figure generator:</strong> <a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/scripts/generate_cross_model_figures.py"><code>scripts/generate_cross_model_figures.py</code></a> &mdash; reads the JSONs above and emits the cross-model figures shown on this page</li>
+        <li><strong>Multi-axis defense calibration + test split (Gemma 4 31B reasoning off):</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_d/gemma_4_31b_thinking_off/headline.json</code> &mdash; 9-cell test matrix (3 defenses &times; 3 attacks)</li>
+            <li><code>results/phase_d/gemma_4_31b_thinking_off/multi_axis_calibration.json</code> &mdash; per-axis &tau; pick tables</li>
+            <li><code>results/phase_d/gemma_4_31b_thinking_off/test_split.parquet</code> &mdash; full per-prompt judged rollouts (n=4,572)</li>
+          </ul>
+        </li>
+        <li><strong>Capability evaluation matrix (Phase E):</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_e/headline.json</code> &mdash; subject &times; condition &times; bench score matrix (4 subjects, 3 benches, 9 cells)</li>
+          </ul>
+        </li>
+        <li><strong>Clean v_harm causal test (Ext B):</strong>
+          <ul style="margin-top:6px;">
+            <li><code>results/phase_b/gemma_4_31b_thinking_off/extensions/v_harm_causal/headline.json</code></li>
+            <li><code>results/phase_b/gemma_4_31b_thinking_on/extensions/v_harm_causal/headline.json</code></li>
+            <li><code>results/phase_b/&lt;subject&gt;/extensions/v_harm_causal/harm_curve.parquet</code> &mdash; per-&lambda; gross + coherence-conditioned harm + BCa CIs</li>
+          </ul>
+        </li>
+        <li><strong>Figure generators:</strong>
+          <ul style="margin-top:6px;">
+            <li><a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/scripts/generate_cross_model_figures.py"><code>scripts/generate_cross_model_figures.py</code></a> &mdash; emits the cross-model AUC, attack-recovery, alignment, probe-depth, pipeline, and per-model dose-response figures</li>
+            <li><a href="https://github.com/pragalbh-dev/multi-axis-persona-safety/blob/main/scripts/generate_post_phase_d_figures.py"><code>scripts/generate_post_phase_d_figures.py</code></a> &mdash; emits the Phase D multi-axis closure, Phase E capability, and Ext B causal figures</li>
+          </ul>
+        </li>
       </ul>
     </div>
 

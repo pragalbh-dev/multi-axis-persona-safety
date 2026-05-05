@@ -1,0 +1,37 @@
+/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[hf] loading google/gemma-2-27b-it bf16 (will run patterns: ['addition_pos', 'addition_neg', 'capping', 'cap_and_steer', 'multi_axis_cap'])…
+Loading weights:   0%|          | 0/508 [00:00<?, ?it/s]Loading weights:   0%|          | 1/508 [00:00<02:02,  4.14it/s]Loading weights:   1%|          | 4/508 [00:00<00:38, 12.99it/s]Loading weights:   3%|▎         | 16/508 [00:00<00:11, 44.01it/s]Loading weights:   5%|▌         | 27/508 [00:00<00:08, 58.51it/s]Loading weights:   7%|▋         | 38/508 [00:00<00:06, 67.23it/s]Loading weights:   9%|▉         | 47/508 [00:00<00:06, 67.97it/s]Loading weights:  11%|█▏        | 58/508 [00:01<00:06, 71.57it/s]Loading weights:  14%|█▍        | 70/508 [00:01<00:05, 83.55it/s]Loading weights:  16%|█▌        | 81/508 [00:01<00:05, 83.22it/s]Loading weights:  18%|█▊        | 91/508 [00:01<00:05, 81.06it/s]Loading weights:  20%|██        | 103/508 [00:01<00:04, 84.02it/s]Loading weights:  22%|██▏       | 114/508 [00:01<00:04, 83.95it/s]Loading weights:  25%|██▍       | 125/508 [00:01<00:04, 84.08it/s]Loading weights:  27%|██▋       | 136/508 [00:01<00:04, 83.53it/s]Loading weights:  29%|██▉       | 147/508 [00:02<00:04, 82.90it/s]Loading weights:  31%|███       | 158/508 [00:02<00:04, 81.57it/s]Loading weights:  33%|███▎      | 168/508 [00:02<00:04, 79.80it/s]Loading weights:  35%|███▌      | 180/508 [00:02<00:03, 83.27it/s]Loading weights:  38%|███▊      | 191/508 [00:02<00:03, 82.87it/s]Loading weights:  40%|███▉      | 202/508 [00:02<00:03, 82.32it/s]Loading weights:  42%|████▏     | 213/508 [00:02<00:03, 82.79it/s]Loading weights:  44%|████▍     | 223/508 [00:03<00:03, 74.60it/s]Loading weights:  46%|████▋     | 236/508 [00:03<00:03, 81.52it/s]Loading weights:  49%|████▊     | 247/508 [00:03<00:03, 82.61it/s]Loading weights:  51%|█████     | 257/508 [00:03<00:03, 79.00it/s]Loading weights:  53%|█████▎    | 269/508 [00:03<00:02, 81.54it/s]Loading weights:  55%|█████▌    | 280/508 [00:03<00:02, 80.93it/s]Loading weights:  57%|█████▋    | 291/508 [00:03<00:02, 81.60it/s]Loading weights:  59%|█████▉    | 302/508 [00:03<00:02, 82.39it/s]Loading weights:  62%|██████▏   | 313/508 [00:04<00:02, 82.82it/s]Loading weights:  63%|██████▎   | 322/508 [00:04<00:02, 78.44it/s]Loading weights:  66%|██████▌   | 333/508 [00:04<00:02, 78.87it/s]Loading weights:  68%|██████▊   | 346/508 [00:04<00:01, 85.06it/s]Loading weights:  70%|███████   | 357/508 [00:04<00:01, 84.30it/s]Loading weights:  72%|███████▏  | 368/508 [00:04<00:01, 84.39it/s]Loading weights:  75%|███████▍  | 379/508 [00:04<00:01, 84.60it/s]Loading weights:  77%|███████▋  | 390/508 [00:05<00:01, 84.64it/s]Loading weights:  79%|███████▉  | 401/508 [00:05<00:01, 84.94it/s]Loading weights:  81%|████████  | 412/508 [00:05<00:01, 84.70it/s]Loading weights:  83%|████████▎ | 421/508 [00:05<00:01, 79.89it/s]Loading weights:  85%|████████▌ | 433/508 [00:05<00:00, 83.32it/s]Loading weights:  88%|████████▊ | 445/508 [00:05<00:00, 84.74it/s]Loading weights:  90%|████████▉ | 456/508 [00:05<00:00, 84.35it/s]Loading weights:  92%|█████████▏| 467/508 [00:05<00:00, 84.10it/s]Loading weights:  94%|█████████▍| 478/508 [00:06<00:00, 84.11it/s]Loading weights:  96%|█████████▌| 487/508 [00:06<00:00, 79.73it/s]Loading weights:  98%|█████████▊| 498/508 [00:06<00:00, 80.97it/s]Loading weights: 100%|██████████| 508/508 [00:06<00:00, 80.12it/s]
+[transformers] The following generation flags are not valid and may be ignored: ['top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+[hf] loaded in 9.4s
+[hf:addition_pos] prompt 0: 44 tokens
+[hf:addition_pos] prompt 1: 64 tokens
+[hf:addition_pos] prompt 2: 24 tokens
+[hf:addition_pos] prompt 3: 64 tokens
+[hf:addition_pos] prompt 4: 29 tokens
+[hf:addition_pos] wrote /home/ubuntu/research/multi-axis-persona-safety/results/sglang_spike/hf_addition_pos.json
+[hf:addition_neg] prompt 0: 44 tokens
+[hf:addition_neg] prompt 1: 64 tokens
+[hf:addition_neg] prompt 2: 22 tokens
+[hf:addition_neg] prompt 3: 64 tokens
+[hf:addition_neg] prompt 4: 29 tokens
+[hf:addition_neg] wrote /home/ubuntu/research/multi-axis-persona-safety/results/sglang_spike/hf_addition_neg.json
+[hf:capping] prompt 0: 44 tokens
+[hf:capping] prompt 1: 64 tokens
+[hf:capping] prompt 2: 22 tokens
+[hf:capping] prompt 3: 64 tokens
+[hf:capping] prompt 4: 29 tokens
+[hf:capping] wrote /home/ubuntu/research/multi-axis-persona-safety/results/sglang_spike/hf_capping.json
+[hf:cap_and_steer] prompt 0: 44 tokens
+[hf:cap_and_steer] prompt 1: 64 tokens
+[hf:cap_and_steer] prompt 2: 22 tokens
+[hf:cap_and_steer] prompt 3: 64 tokens
+[hf:cap_and_steer] prompt 4: 29 tokens
+[hf:cap_and_steer] wrote /home/ubuntu/research/multi-axis-persona-safety/results/sglang_spike/hf_cap_and_steer.json
+[hf:multi_axis_cap] prompt 0: 44 tokens
+[hf:multi_axis_cap] prompt 1: 64 tokens
+[hf:multi_axis_cap] prompt 2: 24 tokens
+[hf:multi_axis_cap] prompt 3: 64 tokens
+[hf:multi_axis_cap] prompt 4: 29 tokens
+[hf:multi_axis_cap] wrote /home/ubuntu/research/multi-axis-persona-safety/results/sglang_spike/hf_multi_axis_cap.json

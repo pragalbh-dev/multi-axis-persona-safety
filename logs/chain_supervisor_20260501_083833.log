@@ -1,0 +1,10 @@
+[08:38:33Z chain] starting chain over: gemma_4_31b_thinking_off gemma_4_31b_thinking_on
+[08:38:33Z chain] log file: logs/phase_a_chain_20260501_083833.log
+[08:38:33Z chain] gemma_4_31b_thinking_off: already running (pgrep hit), waiting on metrics.json
+[09:37:34Z chain] gemma_4_31b_thinking_off: metrics.json landed — running sanity gate
+SANITY OK [gemma_4_31b_thinking_off]: L*=14 cos_sim=0.818  baseline_harm=0.102  refusal=0.772  AUC(AA)=0.576 AUC(AA+PCs)=0.866 lift=0.295 [0.191, 0.406]  selected_pcs=1  source=bootstrap
+[09:37:35Z chain] gemma_4_31b_thinking_off: COMPLETE + sanity gate passed
+[09:37:35Z chain] gemma_4_31b_thinking_on: launching via scripts/launch_phase_a_subject.sh
+subject: gemma_4_31b_thinking_on
+PID: 116384
+LOG: logs/phase_a_gemma_4_31b_thinking_on_20260501_093735.log

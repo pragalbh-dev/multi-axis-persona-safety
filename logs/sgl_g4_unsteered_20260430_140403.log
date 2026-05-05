@@ -1,0 +1,53 @@
+/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/launch_server.py:51: UserWarning: 'python -m sglang.launch_server' is still supported, but 'sglang serve' is the recommended entrypoint.
+  Example: sglang serve --model-path <model> [options]
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py", line 1457, in from_pretrained
+    config_class = CONFIG_MAPPING[config_dict["model_type"]]
+                   ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py", line 1160, in __getitem__
+    raise KeyError(key)
+KeyError: 'gemma4'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/launch_server.py", line 59, in <module>
+    server_args = prepare_server_args(sys.argv[1:])
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 6539, in prepare_server_args
+    return ServerArgs.from_cli_args(raw_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 5975, in from_cli_args
+    return cls(**{attr: getattr(args, attr) for attr in attrs})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 352, in __init__
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 778, in __post_init__
+    self._handle_piecewise_cuda_graph()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 1086, in _handle_piecewise_cuda_graph
+    if self.get_model_config().is_piecewise_cuda_graph_disabled_model:
+       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 6025, in get_model_config
+    self.model_config = ModelConfig.from_server_args(self)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/configs/model_config.py", line 270, in from_server_args
+    return ModelConfig(
+           ^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/configs/model_config.py", line 139, in __init__
+    self.hf_config = get_config(
+                     ^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/utils/common.py", line 3156, in wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/utils/hf_transformers_utils.py", line 519, in get_config
+    raise e
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/utils/hf_transformers_utils.py", line 514, in get_config
+    config = AutoConfig.from_pretrained(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/transformers/models/auto/configuration_auto.py", line 1459, in from_pretrained
+    raise ValueError(
+ValueError: The checkpoint you are trying to load has model type `gemma4` but Transformers does not recognize this architecture. This could be because of an issue with the checkpoint, or because your version of Transformers is out of date.
+
+You can update Transformers with the command `pip install --upgrade transformers`. If this does not work, and the checkpoint is very new, then there may not be a release version that supports this model yet. In this case, you can get the most up-to-date code by installing Transformers from source with the command `pip install git+https://github.com/huggingface/transformers.git`

@@ -1,0 +1,10 @@
+[09:54:42Z chain] starting chain over: gemma_4_31b_thinking_on
+[09:54:42Z chain] log file: logs/phase_a_chain_20260501_095442.log
+[09:54:42Z chain] gemma_4_31b_thinking_on: launching via scripts/launch_phase_a_subject.sh
+subject: gemma_4_31b_thinking_on
+PID: 117512
+LOG: logs/phase_a_gemma_4_31b_thinking_on_20260501_095442.log
+[13:16:04Z chain] gemma_4_31b_thinking_on: metrics.json landed — running sanity gate
+SANITY OK [gemma_4_31b_thinking_on]: L*=59 cos_sim=0.822  baseline_harm=0.150  refusal=0.776  AUC(AA)=0.813 AUC(AA+PCs)=0.905 lift=0.101 [0.051, 0.155]  selected_pcs=9  source=bootstrap
+[13:16:05Z chain] gemma_4_31b_thinking_on: COMPLETE + sanity gate passed
+[13:16:05Z chain] PHASE A CHAIN COMPLETE — all subjects done + all sanity gates passed, sentinel: results/phase_a/.chain_complete

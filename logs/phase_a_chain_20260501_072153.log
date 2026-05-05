@@ -1,0 +1,4 @@
+[07:21:53Z chain] starting chain over: gemma_4_31b_thinking_off gemma_4_31b_thinking_on
+[07:21:53Z chain] log file: logs/phase_a_chain_20260501_072153.log
+[07:21:53Z chain] gemma_4_31b_thinking_off: already running (pgrep hit), waiting on metrics.json
+[08:06:54Z chain] ERROR: gemma_4_31b_thinking_off process not running and metrics.json missing — chain halted

@@ -1,0 +1,8 @@
+[13:46:59Z chain_b] starting Phase B chain over: qwen_3_32b gemma_4_31b_thinking_off gemma_4_31b_thinking_on
+[13:46:59Z chain_b] log file: logs/phase_b_chain_20260501_134659.log
+[13:46:59Z chain_b] qwen_3_32b: launching via scripts/launch_phase_b_subject.sh
+subject: qwen_3_32b
+venv:    .venv-sglang
+PID:     127490
+LOG:     logs/phase_b_qwen_3_32b_20260501_134659.log
+[13:56:19Z chain_b] ERROR: qwen_3_32b process not running and lambda_sweep.parquet missing — chain halted

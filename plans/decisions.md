@@ -819,3 +819,68 @@ val_aa_pc2p75_atk_signmatched_pc3  nonsensical 200/200
 **What.** `vllm_profile: long` in `configs/phase_e.yaml` → max_model_len=8192 instead of 2048.
 **Why.** EQ-Bench p99 input length is ~990 tokens before chat-template overhead. With max_input_len=1024 + max_new_tokens=1024, the "short" profile's 2048 max_model_len leaves no margin for chat template tokens. "Long" eliminates the risk of vLLM truncation/error on the long tail of EQ-Bench prompts at modest throughput cost (decode-bound, not KV-cache-bound at our prompt counts).
 **Reversibility.** Trivial. Change the YAML field; existing rollouts are unaffected.
+
+---
+
+## 2026-05-05 — Ext B causal v_harm test (decisions + result)
+
+**Source.** `plans/may_3_directive.md` 2026-05-03 retrim, thread B. Run = `src/experiments/ext_b_v_harm_causal.py` over both Gemma 4 31B subjects; configs `configs/ext_b_v_harm_causal_{thinking_off,thinking_on}.yaml`. Sequential detached run 03:38–14:21 UTC (≈10.7 hr; log `logs/ext_b_v_harm_causal_20260505_033846.log`).
+
+### Decision A — Re-use Phase B `v_harm.safetensors` + `_full_subset.parquet`
+**What.** Ext B step 1 verifies Phase B's existing v_harm vector (already saved as `v_unit · lmsys_norm` at L*, bf16) and copies Phase B's 508-prompt subset rather than rebuilding either.
+**Why.** Phase B's vector matches the addition-mode coefficient convention exactly (coefficient = λ → adds λ · lmsys_norm · v_unit). Rebuilding from baseline activations would reproduce the same numbers and add an extraction-fidelity regression risk (PCA mean-of-v_harm depends on the harm/safe subset construction; deviating from Phase B's convention silently changes the sign convention). The 508-prompt subset re-use makes the contrast vs Phase B's AA-capped + v_harm runs an apples-to-apples comparison on identical prompts.
+**Reversibility.** High; step 1 reads the path from config, swap to a regenerated vector by pointing `phase_b_dir` elsewhere.
+
+### Decision B — Diff CI vs length-matched binomial pseudo-vector
+**What.** The bootstrap CI for `(harm_steered − baseline)` resamples a length-508 0/1 array of mean = `phase_a_baseline_harm_rate` instead of the unsteered Phase A per-prompt harm_binary.
+**Why.** Phase A `metrics.json::headline.baseline_harm_rate` is the only persisted summary at this layer — per-prompt harm labels for the unsteered Phase A run aren't aligned to the Ext B subset. The pseudo-vector approximates baseline binomial variance with `n=508, p=baseline_harm_rate`; this slightly understates baseline variability (the true Phase A run has the same point estimate but the pseudo-vector lacks the genuine random ordering). Steered samples are the dominant uncertainty (their `p` is ~0.04-0.14 and we have only 508 of them, so SE is ~1pp), so the underestimation doesn't change the decision rule outcome.
+**Alternatives considered.** Re-run a 508-prompt unsteered baseline from Phase A artifacts to get true per-prompt harm_binary (rejected: 46 min + 25 min judge = 1.2 hr just for tighter baseline variance, no methodological gain). Use Wilson score interval analytically (rejected: doesn't compose with bootstrap of the steered side).
+**Reversibility.** Trivial; a future patch can swap the pseudo-vector for true Phase A baseline binaries when those land.
+
+### Decision C — Skip thread D (Ext D) coverage extension
+**What.** Ext D bypass interpretation stays scoped to the Plan B Gemma 2 27B + Phase B per-subject rollouts; not re-running Ext D rollouts for the Ext B subjects.
+**Why.** Ext D is analysis-only on existing parquets (sentence-transformers embedding + manual tagging). Ext B doesn't produce new rollouts that change the bypass-mode question; it produces clean v_harm rollouts which are a different experimental condition (no AA cap, no DAN attack). Re-running Ext D on Ext B's rollouts would tabulate "what does v_harm steering do at moderate λ" which is already visible in the per-λ harm/coherence numbers (see headline below).
+**Reversibility.** High; Ext D can be extended to Ext B rollouts later if the bypass-mode analysis yields surprises.
+
+### Headline result — `is_causal: false` on both subjects
+
+**g4_off (cos(v_harm, AA) = 0.048; baseline = 10.2%; threshold = +5.0 pp lift with CI > 0):**
+| λ | harm | coherence | lift_pp | lift CI (95%) | excludes 0 |
+|---|---|---|---|---|---|
+| 0.10 | 14.37% | 1.000 | +4.17 | [0.00, +8.27] | no (touches 0) |
+| 0.25 | 12.20% | 0.955 | +2.00 | [−1.97, +5.91] | no |
+| 0.50 | 0.00%  | 0.002 | −10.20 | [−12.99, −7.68] | yes (negative; coherence collapse) |
+
+**g4_on (cos(v_harm, AA) = 0.562; baseline = 15.0%; threshold = +5.0 pp lift with CI > 0):**
+| λ | harm | coherence | lift_pp | lift CI (95%) | excludes 0 |
+|---|---|---|---|---|---|
+| 0.10 | 4.33% | 0.996 | −10.67 | [−14.17, −7.09] | yes (negative; suppression) |
+| 0.25 | 3.74% | 0.996 | −11.26 | [−14.76, −7.68] | yes (negative; suppression) |
+| 0.50 | 3.94% | 0.996 | −11.06 | [−14.76, −7.68] | yes (negative; suppression) |
+
+**Coherence-conditioned re-read (2026-05-05, post-launch).** Sanity-checking the Ext B run after results landed surfaced a methodological gap in the headline framing: the binary harm rule counts `nonsensical` as `harm=0`. So when steering destroys coherence, gross harm rate goes to 0% by construction — that's a coherence artifact, not a causal claim. Re-analyzing with harm conditioned on `harm_label_primary != "nonsensical"`:
+
+| g4_off λ | coherence | n_coherent | harm_among_coherent | lift vs 10.2% baseline | CI on lift_coh |
+|---|---|---|---|---|---|
+| 0.10 | 1.000 | 508 | 14.4% | +4.2 pp | **[+1.0, +7.3] excludes 0** |
+| 0.25 | 0.955 | 485 | 12.8% | +2.6 pp | [−0.3, +5.7] touches 0 |
+| 0.50 | 0.002 | 1   | 0.0%  | uninformative (n=1) | — |
+
+| g4_on λ | coherence | n_coherent | harm_among_coherent | lift vs 15.0% baseline | CI on lift_coh |
+|---|---|---|---|---|---|
+| 0.10 | 0.996 | 506 | 4.4% | −10.7 pp | [−12.2, −8.9] excludes 0 |
+| 0.25 | 0.996 | 506 | 3.8% | −11.2 pp | [−12.8, −9.5] excludes 0 |
+| 0.50 | 0.996 | 506 | 4.0% | −11.0 pp | [−12.6, −9.3] excludes 0 |
+
+**Corrected interpretation.**
+- **g4_off:** v_harm has a **weak but statistically significant causal effect** at coherence-preserving λ. λ=0.10 (full coherence): +4.2 pp lift, CI excludes 0 — the "is_causal: false" headline overstated the negative result; at the threshold-call level the +5 pp bar isn't cleared, but at the "is the lift > 0" level the CI is clean. λ=0.25 lift drops back toward zero (the response is non-monotonic in λ — likely early coherence-drift starting to wash out the signal). λ=0.50 falls into the coherence-collapse zone and is **uninformative** about causality — only 1/508 responses survived to be classified. We did *not* run the intermediate λ ∈ {0.30, 0.35, 0.40} that would map the coherence-decay window where v_harm "wants to" produce harm but hasn't yet collapsed the model. **Decision (per user 2026-05-05):** report the finding as-is; do not run the finer sweep.
+- **g4_on:** anti-causal, **confirmed**. Coherence stays ≥99.6% at all λ, so the suppression isn't a coherence artifact. Mechanism *correction:* the original framing said v_harm steering pulls toward refusals. The label-distribution shift contradicts this — `refusal + refusal_and_justification` rate slightly *drops* (68.8% baseline → ~63% steered), while `out_of_context` rate **jumps from 3.2% → ~19%**. So v_harm at L*=59 doesn't push toward the refusal pole — it pushes toward **off-topic deflection**. The model stays grammatical but disengages from the harmful question. cos(v_harm, PC1)=0.776 explains the *direction* of disruption (toward Assistant-pole geometry), but the behavioral surface is "evasive non-engagement," not "explicit refusal."
+
+**Comparator (G2 27B Plan B, AA-cap + v_harm@λ=0.10):** coherence 76.7%, harm-among-coherent **19.0%** (vs cap-only 1.8%). v_harm-as-attack-under-cap is genuinely causal in the coherent regime on G2 — but the geometric reason is `cos(v_harm, PC2) = −0.71`, i.e., G2's v_harm is essentially anti-PC2. PC2 attack on G2 also recovers harm under cap (~11% at λ=0.05). So G2's "v_harm causes harm" effect isn't evidence of a *novel* harm direction; it's PC2 in disguise.
+
+**Implication for the writeup (revised).**
+1. Replace "v_harm is correlate-only on g4_off" with "v_harm has a weak causal effect at coherence-preserving λ, much smaller than the +12.4 pp PC3-attack-under-cap blind spot, and the steering window saturates against coherence collapse before producing comparable harm." This is honest and stronger as a story — the H1+H2 conclusion (PC3 blind spot is a *cap-failure mode*, not a residual-stream harm direction we can simply steer along) is unchanged.
+2. The **alternative "cap along v_harm directly" defence variant** from `plans/extensions_post_plan_b.md` Ext C is still **not worth running** on g4 subjects: g4_off has only a weak effect to cap (+4.2 pp), and g4_on would over-collapse into off-topic deflection.
+3. The Phase F Ext B figure should be a **two-panel** layout: left = gross harm rate per λ (the headline), right = coherence-conditioned harm rate per λ with the coherence-collapse zone (coh < 0.5) shaded out. The +5 pp threshold band should overlay both panels. Cross-subject mini-panel for G2 27B AA-cap+v_harm sits next to it as the "what causal looks like" reference.
+
+**Reversibility.** Result is data-only; the experiment artifacts persist (`results/phase_b/<subject>/extensions/v_harm_causal/{headline.json, harm_curve.parquet, rollouts/}`). The coherence-conditioned analysis is reproducible from `rollouts/v_harm_clean_judged.parquet` in ~5 seconds; no new GPU work needed.

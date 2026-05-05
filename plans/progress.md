@@ -508,3 +508,35 @@ Copy, fill, append at the **end** of this file when a stage completes. Do not ed
 **Pointers into CONVENTIONS.md updated:**
 - (none — Ext B reuses Phase B vectors + subset; no schema additions.)
 
+## Ext B Completion — 2026-05-05
+
+**Run wall-clock (sequential):**
+- g4_off: 03:38 → 06:02 UTC (2.4 hr; 3 cells at 38 + 41 + 42 min, judge 22 min, assemble instant).
+- g4_on: 06:02 → 14:21 UTC (8.3 hr; 3 cells at 161 + 158 + 156 min, judge 25 min, assemble instant).
+- Total: 10.7 hr, in line with the kickoff estimate (10.9 hr). g4_on cells came in slightly faster than the Phase B reference (158 min/cell here vs 155 min/cell there).
+
+**Headline result — `is_causal: false` on both subjects.**
+
+| Subject | λ=0.10 harm | λ=0.25 harm | λ=0.50 harm | Verdict |
+|---|---|---|---|---|
+| g4_off (baseline 10.2%, cos(v_harm,AA)=0.048) | 14.4% (+4.2 pp, CI [0.0, +8.3]) | 12.2% (+2.0 pp) | 0.0% (coh=0.2%; collapsed) | predictive only — λ=0.10 below threshold; CI touches 0 |
+| g4_on (baseline 15.0%, cos(v_harm,AA)=0.562) | 4.3% (−10.7 pp) | 3.7% (−11.3 pp) | 3.9% (−11.1 pp) | anti-causal (suppression) at all λ |
+
+Both subjects clear the directive's "v_harm is correlate-only / anti-causal" outcome. g4_on suppression is mechanistically explained by cos(v_harm, PC1)=0.776 with PC1≈AA at L*=59 — adding v_harm steers toward the Assistant pole (refusal end), not the role-play pole. Full numbers + mechanism: `plans/decisions.md` 2026-05-05 entry "Ext B causal v_harm test".
+
+**Implication for downstream work.**
+- The "cap along v_harm directly" defence variant from `plans/extensions_post_plan_b.md` Ext C composition table is **moot for both g4 subjects** (g4_off: no causal handle to cap; g4_on: would over-collapse into refusal). The Phase D thread A multi-axis "AA + PC2 + PC3" cap remains the only defence variant worth running on g4_off.
+- The H1+H2 Phase B blind-spot framing (PC3 attack opens +12.4 pp under AA-cap on g4_off) **cannot be reproduced via clean v_harm steering** — confirms that the Phase B blind spot is a *cap-failure mode*, not a *direction in the residual stream where harm lives*. The PC3 attack works because it injects orthogonally to the AA cap's clamp range, not because PC3 itself is the harm-causal direction.
+
+**Ext B → Phase F handoff inputs:**
+- `results/phase_b/{gemma_4_31b_thinking_off,gemma_4_31b_thinking_on}/extensions/v_harm_causal/headline.json` — per-λ harm + BCa CIs + decision.
+- `results/phase_b/<subject>/extensions/v_harm_causal/harm_curve.parquet` — flat per-λ summary.
+- `results/phase_b/<subject>/extensions/v_harm_causal/rollouts/v_harm_clean_judged.parquet` — full per-prompt judged rollouts (n=1524 per subject = 508 × 3 λ).
+
+**Open items:**
+- Ext D bypass interpretation (CPU only, 2-3 hr).
+- Phase F report figures + writeup. Cross-model figure regen (`scripts/generate_cross_model_figures.py`) needs an Ext B panel: per-λ harm/coherence × subject, with the +5 pp threshold band overlaid.
+
+**Pointers into CONVENTIONS.md updated:**
+- (none — clean negative result; no new schemas, no new conventions.)
+

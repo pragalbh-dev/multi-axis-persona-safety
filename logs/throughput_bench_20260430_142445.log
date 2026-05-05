@@ -1,0 +1,84 @@
+==[1/4] HF unsteered==
+/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:65: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[bench:hf] loading google/gemma-2-27b-it bf16…
+Loading weights:   0%|          | 0/508 [00:00<?, ?it/s]Loading weights:   0%|          | 1/508 [00:00<02:02,  4.14it/s]Loading weights:   1%|          | 5/508 [00:00<00:30, 16.36it/s]Loading weights:   3%|▎         | 16/508 [00:00<00:11, 43.13it/s]Loading weights:   5%|▍         | 25/508 [00:00<00:09, 52.62it/s]Loading weights:   7%|▋         | 38/508 [00:00<00:06, 68.46it/s]Loading weights:  10%|▉         | 49/508 [00:00<00:06, 73.73it/s]Loading weights:  11%|█▏        | 58/508 [00:01<00:06, 72.18it/s]Loading weights:  14%|█▎        | 69/508 [00:01<00:05, 75.28it/s]Loading weights:  16%|█▌        | 80/508 [00:01<00:05, 77.55it/s]Loading weights:  18%|█▊        | 93/508 [00:01<00:04, 84.53it/s]Loading weights:  20%|██        | 102/508 [00:01<00:05, 79.59it/s]Loading weights:  23%|██▎       | 115/508 [00:01<00:04, 85.72it/s]Loading weights:  25%|██▍       | 126/508 [00:01<00:04, 85.38it/s]Loading weights:  27%|██▋       | 135/508 [00:01<00:04, 80.29it/s]Loading weights:  29%|██▊       | 146/508 [00:02<00:04, 79.46it/s]Loading weights:  30%|███       | 154/508 [00:02<00:04, 73.42it/s]Loading weights:  33%|███▎      | 170/508 [00:02<00:03, 87.72it/s]Loading weights:  36%|███▌      | 181/508 [00:02<00:03, 84.43it/s]Loading weights:  38%|███▊      | 192/508 [00:02<00:03, 83.44it/s]Loading weights:  40%|███▉      | 203/508 [00:02<00:03, 83.82it/s]Loading weights:  42%|████▏     | 212/508 [00:02<00:03, 79.68it/s]Loading weights:  44%|████▍     | 225/508 [00:03<00:03, 84.55it/s]Loading weights:  46%|████▋     | 236/508 [00:03<00:03, 83.14it/s]Loading weights:  49%|████▊     | 247/508 [00:03<00:03, 82.92it/s]Loading weights:  51%|█████     | 258/508 [00:03<00:02, 83.43it/s]Loading weights:  53%|█████▎    | 267/508 [00:03<00:03, 78.01it/s]Loading weights:  55%|█████▌    | 280/508 [00:03<00:02, 84.61it/s]Loading weights:  57%|█████▋    | 289/508 [00:03<00:02, 80.00it/s]Loading weights:  59%|█████▉    | 302/508 [00:03<00:02, 85.92it/s]Loading weights:  62%|██████▏   | 313/508 [00:04<00:02, 84.73it/s]Loading weights:  64%|██████▍   | 324/508 [00:04<00:02, 84.08it/s]Loading weights:  66%|██████▌   | 335/508 [00:04<00:02, 84.14it/s]Loading weights:  68%|██████▊   | 346/508 [00:04<00:01, 84.24it/s]Loading weights:  70%|███████   | 357/508 [00:04<00:01, 83.73it/s]Loading weights:  72%|███████▏  | 368/508 [00:04<00:01, 83.93it/s]Loading weights:  75%|███████▍  | 379/508 [00:04<00:01, 82.60it/s]Loading weights:  77%|███████▋  | 389/508 [00:05<00:01, 79.75it/s]Loading weights:  79%|███████▉  | 401/508 [00:05<00:01, 83.46it/s]Loading weights:  81%|████████  | 410/508 [00:05<00:01, 79.17it/s]Loading weights:  83%|████████▎ | 423/508 [00:05<00:01, 83.45it/s]Loading weights:  85%|████████▌ | 434/508 [00:05<00:00, 83.44it/s]Loading weights:  87%|████████▋ | 443/508 [00:05<00:00, 77.65it/s]Loading weights:  89%|████████▉ | 452/508 [00:05<00:00, 74.49it/s]Loading weights:  92%|█████████▏| 467/508 [00:05<00:00, 86.17it/s]Loading weights:  94%|█████████▎| 476/508 [00:06<00:00, 81.07it/s]Loading weights:  96%|█████████▌| 487/508 [00:06<00:00, 80.77it/s]Loading weights:  98%|█████████▊| 500/508 [00:06<00:00, 86.11it/s]Loading weights: 100%|██████████| 508/508 [00:06<00:00, 79.93it/s]
+[transformers] The following generation flags are not valid and may be ignored: ['top_k']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Traceback (most recent call last):
+  File "/home/ubuntu/research/multi-axis-persona-safety/scripts/bench_sglang_vs_hf.py", line 205, in <module>
+    main()
+  File "/home/ubuntu/research/multi-axis-persona-safety/scripts/bench_sglang_vs_hf.py", line 199, in main
+    bench_hf(args.model_path, args.condition, layer=args.layer)
+  File "/home/ubuntu/research/multi-axis-persona-safety/scripts/bench_sglang_vs_hf.py", line 124, in bench_hf
+    _run_batches()
+  File "/home/ubuntu/research/multi-axis-persona-safety/scripts/bench_sglang_vs_hf.py", line 114, in _run_batches
+    out = model.generate(
+          ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 2543, in generate
+    result = decoding_method(
+             ^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 2736, in _sample
+    outputs = self._prefill(
+              ^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/generation/utils.py", line 3768, in _prefill
+    return self(**model_inputs, return_dict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/utils/generic.py", line 887, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/models/gemma2/modeling_gemma2.py", line 523, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/utils/generic.py", line 963, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 248, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/models/gemma2/modeling_gemma2.py", line 459, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/modeling_layers.py", line 93, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/models/gemma2/modeling_gemma2.py", line 329, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/models/gemma2/modeling_gemma2.py", line 284, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/transformers/models/gemma2/modeling_gemma2.py", line 222, in eager_attention_forward
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv/lib/python3.12/site-packages/torch/nn/functional.py", line 2159, in softmax
+    ret = input.softmax(dim, dtype=dtype)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 7.53 GiB. GPU 0 has a total capacity of 94.97 GiB of which 2.77 GiB is free. Including non-PyTorch memory, this process has 92.19 GiB memory in use. Of the allocated memory 77.84 GiB is allocated by PyTorch, and 13.71 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

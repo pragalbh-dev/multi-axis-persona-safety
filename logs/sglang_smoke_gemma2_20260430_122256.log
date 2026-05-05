@@ -1,0 +1,60 @@
+Failed to get device capability: SM 12.x requires CUDA >= 12.9.
+Failed to get device capability: SM 12.x requires CUDA >= 12.9.
+/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/launch_server.py:51: UserWarning: 'python -m sglang.launch_server' is still supported, but 'sglang serve' is the recommended entrypoint.
+  Example: sglang serve --model-path <model> [options]
+  warnings.warn(
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/launch_server.py", line 59, in <module>
+    server_args = prepare_server_args(sys.argv[1:])
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 6539, in prepare_server_args
+    return ServerArgs.from_cli_args(raw_args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 5975, in from_cli_args
+    return cls(**{attr: getattr(args, attr) for attr in attrs})
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 352, in __init__
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 778, in __post_init__
+    self._handle_piecewise_cuda_graph()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 1086, in _handle_piecewise_cuda_graph
+    if self.get_model_config().is_piecewise_cuda_graph_disabled_model:
+       ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/server_args.py", line 6021, in get_model_config
+    from sglang.srt.configs.model_config import ModelConfig
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/configs/model_config.py", line 27, in <module>
+    from sglang.srt.layers.quantization import QUANTIZATION_METHODS
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/quantization/__init__.py", line 19, in <module>
+    from sglang.srt.layers.quantization.auto_round import AutoRoundConfig
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/quantization/auto_round.py", line 12, in <module>
+    from sglang.srt.layers.quantization.utils import get_scalar_types
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/quantization/utils.py", line 13, in <module>
+    from sglang.srt.layers.quantization.fp8_kernel import scaled_fp8_quant
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/quantization/fp8_kernel.py", line 31, in <module>
+    from sglang.srt.layers import deep_gemm_wrapper
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/deep_gemm_wrapper/__init__.py", line 1, in <module>
+    from .entrypoint import *
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/deep_gemm_wrapper/entrypoint.py", line 7, in <module>
+    from sglang.srt.layers.deep_gemm_wrapper import compile_utils
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/deep_gemm_wrapper/compile_utils.py", line 15, in <module>
+    from sglang.srt.layers.deep_gemm_wrapper.configurer import ENABLE_JIT_DEEPGEMM
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/deep_gemm_wrapper/configurer.py", line 22, in <module>
+    ENABLE_JIT_DEEPGEMM = _compute_enable_deep_gemm()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/sglang/srt/layers/deep_gemm_wrapper/configurer.py", line 15, in _compute_enable_deep_gemm
+    import deep_gemm  # noqa: F401
+    ^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/deep_gemm/__init__.py", line 107, in <module>
+    from . import utils
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/deep_gemm/utils/__init__.py", line 1, in <module>
+    from . import math, layout
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/deep_gemm/utils/layout.py", line 4, in <module>
+    _ensure_initialized()
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/deep_gemm/__init__.py", line 42, in _ensure_initialized
+    torch.ops.deep_gemm.init(library_root, _find_cuda_home())
+                                           ^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/research/multi-axis-persona-safety/.venv-sglang/lib/python3.12/site-packages/deep_gemm/__init__.py", line 30, in _find_cuda_home
+    assert cuda_home is not None
+           ^^^^^^^^^^^^^^^^^^^^^
+AssertionError
