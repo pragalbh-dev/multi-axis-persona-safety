@@ -8,14 +8,17 @@ Extending the Assistant Axis paper (Lu et al., arXiv 2601.10387) to study the sa
 
 > **Note on paths:** `~/obsidian-vault/` is a symlink on both laptop and GPU pointing to the actual obsidian vault (laptop: `~/Documents/knowledge-base/obsidian-vault/`, GPU: `~/data-science/research/knowledge-base/obsidian-vault/`). If the symlink is missing, create it: `ln -s <actual-vault-path> ~/obsidian-vault`.
 
+> **S3 artifact storage:** gitignored heavy artifacts (`data/`, `results/`, `logs/`) are mirrored to `s3://sagemaker-deployment-models-yaxh/data/persona-safety/<TIMESTAMP>/` — one timestamped prefix per upload (immutable snapshots, do not overwrite). The instance IAM role `ds-instance-manager-instance-role` has read+write+delete on this prefix; no AWS creds needed in `.env`. Known snapshots: `20260430_081752/` (initial local→S3 push, gemma_2_27b activations + early plan_b/stage_0 results, ~5 GB), `20260505_124107/` (full pre-Ext-B-completion, all 4 subjects' activations + phase_a/b/d/e + logs, ~20 GB, excluded the in-flight `gemma_4_31b_thinking_on/extensions/v_harm_causal/` dir). Sync new snapshots with: `aws s3 sync . s3://sagemaker-deployment-models-yaxh/data/persona-safety/$(date -u +%Y%m%d_%H%M%S)/ --exclude "*" --include "data/*" --include "results/*" --include "logs/*"` (run from repo root). Pull a known snapshot with the symmetric `aws s3 sync s3://.../<TIMESTAMP>/ .`. Do not list the bucket root (`aws s3 ls s3://sagemaker-deployment-models-yaxh/`) — IAM denies `ListAllMyBuckets`; list the prefix instead.
+
 ---
 
 ## Current State
 
-**Active stage:** Stage 2 — Core infrastructure (**Plan B mode** — pre-Anthropic-fellowship-deadline April 26 evening)
-**Active task:** T2.0 (start) — transcribe paper's 9-cat judge prompt to `configs/judge_prompt.yaml` + Gemma 2 27B Appendix F capping range. See `plans/stage-2-infrastructure.md` "Execution plan" → "Plan B mode" + the 16 resolved decisions (D1–D16).
-**Plan B run target:** single-subject H1 demonstration on Gemma 2 27B (DAN-only, 500 prompts, 11 conditions, HF for steered + vLLM for unsteered + judge); ≤18 hr budget; replaces the original T2.9 2-hour smoke. Post-deadline replay (April 27 → May 3) restores full volumes + all 4 subjects + Shah-reconstructed + capability eval + ordinal LASSO. SGLang `--forward-hooks` spike scheduled as first task of post-deadline sweep — see `plans/sglang_post_plan_b_spike.md`.
-**Last updated:** 2026-04-25
+**Active stage:** Phase E complete (2026-05-04). Next: Ext B causal v_harm test (thread B of `plans/may_3_directive.md` 2026-05-03 retrim).
+**Active task:** Ext B causal v_harm test on g4_off + g4_on. Steer along v_harm at λ ∈ {0.10, 0.25, 0.50} on the 508-prompt baseline DAN subset (no cap, no DAN-style attack). Decision rule: harm rate ≥ 5 pp above baseline with BCa CI excluding 0 → causal. Detached run launched 2026-05-05 03:38 UTC; estimated wall-clock ~10-11 hr (g4_off ~3 hr + g4_on ~8 hr). Log: `logs/ext_b_v_harm_causal_20260505_033846.log`. Outputs land at `results/phase_b/{gemma_4_31b_thinking_off,gemma_4_31b_thinking_on}/extensions/v_harm_causal/{headline.json,harm_curve.parquet}`.
+**Phase D headline (g4_off, n=508/cell test split):** AA + PC2 + PC3 cap **partially closes** the PC3-attack blind spot (23.6% → 22.05%, −1.57 pp; ~12% of the 13.4 pp recovery). Coherence ≥0.97 at all 9 test cells. Full numbers: `results/phase_d/gemma_4_31b_thinking_off/headline.json`.
+**Phase E headline:** 4 subjects × {unsteered, AA-cap} × {IFEval, GSM8k, EQ-Bench} + multi-axis-cap × g4_off cells complete. Capability matrix at `results/phase_e/headline.json`.
+**Last updated:** 2026-05-05
 
 Stage 1 complete (design-only, runs in parallel with any remaining Stage 0 smoke loads). See `plans/progress.md` "Stage 1 → Stage 2 Handoff" for artifact manifest. Key locked schemas (do not modify without a `decisions.md` entry):
 - `ExperimentConfig` (pydantic v2) at `src/utils/config.py` ↔ `configs/experiment_template.yaml`.

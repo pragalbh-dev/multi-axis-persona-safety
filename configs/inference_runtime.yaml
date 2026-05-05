@@ -21,6 +21,41 @@ defaults:
   attention_backend: null           # use vLLM default (TRITON_ATTN typical)
   enable_prefix_caching: false      # only judge enables it (shared template)
 
+# ── SGLang server defaults (post-Plan-B spike, 2026-04-30) ─────────────────────
+# All hook-enabled SGLang launches must:
+#   - export CUDA_HOME=/usr/local/cuda PATH=/usr/local/cuda/bin:$PATH
+#     (sgl_kernel JIT compiles for sm_120 — needs nvcc on PATH)
+#   - export SGLANG_ENABLE_JIT_DEEPGEMM=False (deep_gemm cuda_home assert fails on this host)
+#   - pass --disable-piecewise-cuda-graph (regular CUDA graphs still active; piecewise
+#     traces 58 dynamic shape variants when hooks are present, costing ~12 min/launch)
+#   - pass --attention-backend triton (FlashInfer fused rmsnorm doesn't dispatch under hooks)
+#   - pass --mem-fraction-static 0.85 (matches HF KV-cache headroom)
+#
+# `model_path` (for --model-path) reuses the subject's `hf_id`. Hook target_modules
+# use the subject's `layer_module_glob_prefix` (configs/subjects.yaml).
+sglang_defaults:
+  port: 30000
+  tp: 1
+  dtype: bfloat16
+  mem_fraction_static: 0.85
+  attention_backend: triton
+  disable_piecewise_cuda_graph: true
+  startup_log_marker: "Application startup complete"
+  startup_timeout_seconds: 600
+  request_concurrency: 32                # aiohttp connector limit; SGLang handles continuous batching internally
+  # request_timeout_seconds is per-request from session.post() entry. Because
+  # asyncio.gather submits all N tasks at once and the connector caps to 32
+  # active, the (N - 32) backlogged tasks start their own 600s clock while
+  # waiting for a connection slot. Phase E pushes 1712 prompts through Qwen 3 /
+  # Gemma 4 with capping hooks at ~200-400 tok/s — backlog wait alone exceeds
+  # 600s after batch ~12-19 of 32. Bumped to 7200 (2 hr) to safely cover Phase
+  # E's queue depth. Phase B's 508-prompt subsets fit under 600s, so this is
+  # purely additive ceiling. (2026-05-04 cell 4/9 timeout, plans/decisions.md).
+  request_timeout_seconds: 7200
+  env:
+    SGLANG_ENABLE_JIT_DEEPGEMM: "False"
+    CUDA_HOME: /usr/local/cuda
+
 gemma_2_27b:
   hf_id: google/gemma-2-27b-it
   base_hf_id: google/gemma-2-27b-it
@@ -82,6 +117,53 @@ gemma_4_31b:
     long:
       max_model_len: 8192
       gpu_memory_utilization: 0.85   # picked second-place over edge-case gmu=0.90/256 (0.5% slower, 13 GB more headroom)
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 328.4
+      measured_vram_total_gb: 127.7
+
+# Thinking-mode-split entries added 2026-05-01 for Phase A — same weights and
+# load semantics as gemma_4_31b above; only chat_template_kwargs differ
+# (carried by configs/subjects.yaml). Required by _run_vllm which keys on
+# model_id (not family) when reading inference_runtime.yaml. Profiles mirror
+# gemma_4_31b verbatim.
+gemma_4_31b_thinking_off:
+  hf_id: google/gemma-4-31B-it
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 4
+  trust_remote_code: true
+  profiles:
+    short:
+      max_model_len: 2048
+      gpu_memory_utilization: 0.75
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 628.9
+      measured_vram_total_gb: 114.2
+    long:
+      max_model_len: 8192
+      gpu_memory_utilization: 0.85
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 328.4
+      measured_vram_total_gb: 127.7
+
+gemma_4_31b_thinking_on:
+  hf_id: google/gemma-4-31B-it
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 4
+  trust_remote_code: true
+  profiles:
+    short:
+      max_model_len: 2048
+      gpu_memory_utilization: 0.75
+      max_num_seqs: 512
+      enable_prefix_caching: false
+      measured_tps: 628.9
+      measured_vram_total_gb: 114.2
+    long:
+      max_model_len: 8192
+      gpu_memory_utilization: 0.85
       max_num_seqs: 512
       enable_prefix_caching: false
       measured_tps: 328.4

@@ -1,0 +1,40 @@
+# Ext B — Causal v_harm test, Gemma 4 31B (thinking ON).
+#
+# Per `plans/may_3_directive.md` 2026-05-03 retrim, thread B. Same protocol as
+# the thinking-OFF variant; the two subjects share v_harm geometry interest:
+#   - g4_off: cos(v_harm, AA) = 0.048 (maximally orthogonal)
+#   - g4_on:  cos(v_harm, AA) = 0.562 (v_harm overlaps AA, but PC1≈AA already
+#             absorbs most harm signal — so the residual orthogonal component
+#             is the interesting one)
+#
+# Reuses Phase B artifacts:
+#   - results/phase_b/gemma_4_31b_thinking_on/extraction/vectors/v_harm.safetensors
+#     (norm = lmsys_norm = 6.21 at L*=59; addition coefficient = λ)
+#   - results/phase_b/gemma_4_31b_thinking_on/rollouts/_full_subset.parquet (n=508 DAN)
+#   - results/phase_b/gemma_4_31b_thinking_on/harm_direction.json
+#
+# Cost note: thinking-ON HF rollouts run ~3.4× slower than thinking-OFF
+# (Phase B v_harm full: 9303s vs 2778s for 508 prompts). max_new_tokens kept at
+# 1024 to match Phase B's empirically-calibrated truncation rate (<1% over
+# baseline+role rollouts at p99=944).
+
+experiment_id: ext_b_v_harm_causal_gemma_4_31b_thinking_on
+subject_id: gemma_4_31b_thinking_on
+seed: 42
+output_dir: results/phase_b/gemma_4_31b_thinking_on/extensions/v_harm_causal
+
+model_id: gemma_4_31b_thinking_on
+phase_b_dir: results/phase_b/gemma_4_31b_thinking_on
+phase_a_dir: results/phase_a/gemma_4_31b_thinking_on
+
+lambda_schedule: [0.10, 0.25, 0.50]
+
+hf_steered_batch_size: 8
+hf_steered_max_input_len: 4096
+max_new_tokens: 1024
+
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml
+
+causal_lift_threshold_pp: 5.0
+bootstrap_n: 10000

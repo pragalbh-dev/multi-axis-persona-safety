@@ -35,6 +35,8 @@ dependencies = [
     "hf-transfer>=0.1.9",
     "pynvml>=13.0.1",
     "matplotlib>=3.10.9",
+    # Phase E capability eval scorers
+    "instruction_following_eval @ git+https://github.com/josejg/instruction_following_eval.git",
 ]
 
 [dependency-groups]
@@ -53,6 +55,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 100

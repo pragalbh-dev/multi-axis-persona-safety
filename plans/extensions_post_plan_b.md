@@ -454,3 +454,92 @@ These remain the scope of the broader post-deadline programme. This document
 covers only the *theoretical* extensions surfaced during Plan B's review
 discussion (predictive vs causal, harm geometry, multi-axis defence H2,
 behavioural bypass).
+
+---
+
+## Ext H — Persona composition (H3)  *(deferred 2026-05-03 from Phase C)*
+
+**Status.** Was Phase C of `plans/may_3_directive.md`; moved here by the
+2026-05-03 retrim amendment. Picked up only if a reviewer requests H3
+(linearity vs manifold) evidence or as natural follow-up after the H1+H2
+narrative ships.
+
+**Goal.** Test whether persona vector arithmetic is linear or shows nonlinear
+interactions (paper §3.1 + PERSONA paper 2602.15669 trait arithmetic, scaled
+to multi-trait personas).
+
+**Method.** Per `plans/stage-5-composition.md` T5.1–T5.7. Locked α=β=0.5
+linearity test (R² + residual norm + per-PC residual projection); cap-bypass
+under composition; ~30-50 persona pairs across complementary / contradictory
+/ neutral / safety-concerning categories.
+
+**Cost.** ~12-15 hr at TP=1 across 4 subjects (50 pairs × 200 rollouts ×
+4 subjects ≈ 40K generations, plus PCA fits + analysis). Single subject
+~3-4 hr if scoping.
+
+**Why deferred.** Phase B's results (g4_off AA-cap failure + thinking-mode
+geometry shift) define the project's H1+H2 narrative. H3 doesn't sharpen
+either thread. If the writeup gets a reviewer ask for "what about non-linear
+persona composition?", run this then — otherwise the existing report is
+self-contained.
+
+---
+
+## Ext I — Thinking-vs-answer activation split  *(deferred 2026-05-03; cross-references stage-7-extensions Ext 2)*
+
+**Status.** Was scoped in `configs/plan_b_gemma_4_31b_thinking_on.yaml` via
+`extract_thinking_answer_split: true`, but `src/extraction/backend_hf.py`
+never honored the flag. Phase A's PCA on `gemma_4_31b_thinking_on` was fit
+on **pooled thinking + answer tokens**. The L*=59, cos_sim(PC1, AA)=0.822,
+blind-spot-lift=0.101 numbers therefore conflate the two spans.
+
+**Goal.** Refit PCA per span (thinking-only, answer-only) and re-derive AA
++ blind-spot lift on each. Check whether L*=59 is driven by the thinking
+trace dragging the PC1≈AA direction toward the very-late layers (in which
+case the answer-only L* should land closer to the ~50% depth band of
+g4_off's L*=14) or whether thinking-on truly concentrates safety geometry
+at the model's tail.
+
+**Why this matters.** The L*=59 vs L*=14 gap on identical weights is the
+most novel cross-subject finding in the project. As it stands, it's not
+defensible against the natural critique "your PCA was fit on a mixture of
+thinking traces (which dominate the token budget) and answer tokens — the
+late L* might just be where thinking traces concentrate, not where harm
+relevance lives." The split removes that ambiguity.
+
+**Method.**
+1. Patch `src/extraction/backend_hf.py` to honor `extract_thinking_answer_split`.
+   Span detection runs over the response: thinking-tokens span = between the
+   model's `<start_of_turn>model` ... `<end_thinking>` markers (Gemma 4
+   chat template); answer span = after `<end_thinking>` until `<end_of_turn>`.
+   Save per-rollout mean activation for each span separately.
+2. Refit PCA on thinking-only and answer-only activation matrices. Each
+   subset is the same 30 rollouts × N roles, so n shrinks per subset (from
+   ~30 × 463 = 13.9k to ~30 × 463 each — same n, different signal).
+3. Recompute AA per span, per layer; pick L* per span (argmax cos_sim).
+4. Recompute LASSO blind-spot lift per span on the 500-prompt baseline.
+5. Compare: does answer-only L* shift back to mid-depth? Does AA(answer-only)
+   geometry look like g4_off's? Does the blind-spot lift on thinking-only
+   resemble the all-tokens result?
+
+**Cost.** ~4-5 hr — extraction backend patch + one re-run of step_1b on
+g4_on with span tagging + downstream PCA / AA / blind-spot recompute.
+Full plan_b.py orchestration; no judge re-runs needed (existing Phase A
+rollouts are reusable, only activations change).
+
+**Output.** `results/phase_a/gemma_4_31b_thinking_on/extraction/{thinking,answer}/`
+with the standard Phase A artifact set (aa.safetensors, pcs.safetensors,
+L_star.txt, per_layer_cos_sim.json, pca_meta.json).
+
+**Why deferred.** Current Phase A/B headline numbers stand without the
+split — the split refines the interpretation rather than refuting the
+finding. Doing it now would require rolling back Phase B for g4_on (which
+would consume cached AA / PCs that are about to change). Cleaner to ship
+the H1+H2 story on the current artifacts and run the split as a follow-up
+"are these results stable under per-span PCA?" sanity check.
+
+**Cross-reference.** This is the concrete realisation of the "reasoning
+subspace deep-dive (thinking-vs-answer geometry)" extension already
+sketched in `plans/stage-7-extensions.md` Ext 2 (per progress.md
+2026-04-24 17:00 entry). Whichever doc is picked up first should
+cross-reference the other.

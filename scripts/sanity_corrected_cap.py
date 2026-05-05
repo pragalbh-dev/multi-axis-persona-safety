@@ -27,7 +27,11 @@ import pandas as pd
 import torch
 from safetensors.torch import load_file, save_file
 
+from src.utils.config import assert_venv_for_subject, resolved_steered_backend
 from src.utils.model_runner import run_in_subprocess
+
+assert_venv_for_subject("gemma_2_27b")
+_STEER_BACKEND = resolved_steered_backend("gemma_2_27b")
 
 OUT = Path("results/plan_b_sanity_corrected_cap")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -133,7 +137,7 @@ def main() -> None:
         "src.evaluation.run_subject_rollouts",
         {
             "model_id": "gemma_2_27b",
-            "backend": "hf",
+            "backend": _STEER_BACKEND,
             "prompts_path": str(prompts_path),
             "output_path": str(rollouts_path),
             "condition_id": "aa_cap_fixed",

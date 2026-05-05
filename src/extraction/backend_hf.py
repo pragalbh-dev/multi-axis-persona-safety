@@ -31,10 +31,10 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import yaml
 from safetensors.torch import save_file as _safe_save
 
 from src.extraction.types import ActivationCache, ExtractionConfig
+from src.utils.config import load_subjects
 
 # Make external/assistant-axis importable.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -56,7 +56,7 @@ def _git_sha() -> str:
 
 
 def _load_subjects() -> dict:
-    return yaml.safe_load((Path("configs/subjects.yaml")).read_text())
+    return load_subjects()
 
 
 def _normalize_row(row: Any, tokenizer: Any, chat_template_kwargs: dict) -> tuple[str, int, int]:

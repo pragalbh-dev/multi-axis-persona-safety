@@ -196,8 +196,15 @@ def step_1b_extract_per_rollout_activations(cfg: dict, out_dir: Path, rollouts_p
             "response_text": r["response_text"],
         })
 
-    # Extract at all layers (model has 46 layers for Gemma 2 27B).
-    layers = list(range(46))
+    # Extract at all layers — count resolved per-subject from configs/model_hooks.yaml
+    # (gemma_2: 46, qwen_3: 64, gemma_4: 60). Hardcoded `range(46)` was the original
+    # Gemma-2-only Plan B; multi-subject Phase A needs the per-family value.
+    from src.utils.config import load_model_hooks, model_family_for
+
+    family = model_family_for(cfg["model_id"])
+    n_layers = int(load_model_hooks()[family]["n_layers"])
+    layers = list(range(n_layers))
+    _log(f"step 1b: extracting at {n_layers} layers (family={family})")
     res = run_in_subprocess(
         "src.extraction.run_extract",
         {
@@ -287,8 +294,120 @@ def step_1c_lmsys_norms(cfg: dict, out_dir: Path, l_star: int) -> Path:
     return norms_path
 
 
+# Subjects with paper-released AA + role_vectors on HF (Tier 1).
+# Anything not listed here uses the bootstrap path (see _load_or_bootstrap_aa_and_roles).
+_PAPER_ARTIFACT_DIRS = {
+    "gemma_2_27b": "gemma-2-27b",
+    "qwen_3_32b": "qwen-3-32b",
+}
+
+
+def _load_or_bootstrap_aa_and_roles(cfg: dict, out_dir: Path):
+    """Resolve (AA, role_stack) per subject for step 2.
+
+    Returns:
+        aa:         torch.Tensor of shape (n_layers, d_model)
+        role_stack: torch.Tensor of shape (n_roles, n_layers, d_model)
+
+    Two paths:
+      1. Paper-artifact path (gemma_2_27b, qwen_3_32b) — load HF release verbatim.
+      2. Bootstrap path (gemma_4_31b_*) — group step-1b cached per-rollout activations
+         by role_name → mean → role vector per (role, layer); default-Assistant rows →
+         mean → default-Assistant per layer; AA = mean(default) − mean(role vectors).
+    """
+    import numpy as np
+    import pandas as pd
+    import torch
+
+    from src.extraction.types import ActivationCache
+    from src.utils.config import load_model_hooks, model_family_for
+
+    model_id = cfg["model_id"]
+    paper_subdir = _PAPER_ARTIFACT_DIRS.get(model_id)
+    if paper_subdir is not None:
+        paper_dir = Path("data/paper_artifacts/assistant_axis_vectors") / paper_subdir
+        if (paper_dir / "assistant_axis.pt").exists():
+            _log(f"step 2: paper-artifact path ({paper_dir})")
+            aa = torch.load(paper_dir / "assistant_axis.pt", weights_only=True)
+            role_files = sorted(
+                p for p in (paper_dir / "role_vectors").iterdir() if p.suffix == ".pt"
+            )
+            role_stack = torch.stack(
+                [torch.load(p, weights_only=True) for p in role_files], dim=0
+            )
+            _log(
+                f"step 2: AA shape={tuple(aa.shape)}, role_stack shape={tuple(role_stack.shape)} "
+                f"({len(role_files)} roles)"
+            )
+            return aa, role_stack
+
+    # Bootstrap path: derive AA + role vectors from cached step-1b activations.
+    family = model_family_for(model_id)
+    hooks = load_model_hooks()[family]
+    n_layers = int(hooks["n_layers"])
+    d_model = int(hooks["d_model"])
+    _log(f"step 2: bootstrap path (family={family}, n_layers={n_layers}, d_model={d_model})")
+
+    rollouts_path = out_dir / "role_rollouts.parquet"
+    if not rollouts_path.exists():
+        raise FileNotFoundError(
+            f"step 2 bootstrap requires {rollouts_path} (step 1a output) — not found"
+        )
+    df = pd.read_parquet(rollouts_path)
+    # NOTE: cannot filter on condition_id — run_subject_rollouts overwrites it to
+    # "role_rollout" for every row including the 50 default-Assistant prompts.
+    # Use prompt_id prefix instead: "role::<name>::<i>" vs "default::<i>" (set in step 1a).
+    role_mask = df["prompt_id"].str.startswith("role::")
+    default_mask = df["prompt_id"].str.startswith("default::")
+    role_names = sorted(set(df.loc[role_mask, "role_name"]))
+    role_to_pids = {
+        r: list(df.loc[role_mask & (df["role_name"] == r), "prompt_id"])
+        for r in role_names
+    }
+    default_pids = list(df.loc[default_mask, "prompt_id"])
+    _log(
+        f"step 2: bootstrap from {len(role_names)} roles, "
+        f"{sum(len(v) for v in role_to_pids.values())} role rollouts, "
+        f"{len(default_pids)} default-Assistant rollouts"
+    )
+
+    role_means = np.zeros((len(role_names), n_layers, d_model), dtype=np.float32)
+    default_means = np.zeros((n_layers, d_model), dtype=np.float32)
+
+    for layer in range(n_layers):
+        cache_path = ActivationCache.cache_path(
+            model_id, "plan_b_role_rollouts", layer, "data/cache"
+        )
+        cache = ActivationCache.load(cache_path)
+        pid_to_idx = {pid: i for i, pid in enumerate(cache.prompt_ids)}
+        acts = cache.tensor.float().numpy()
+        for r_idx, role in enumerate(role_names):
+            idxs = [pid_to_idx[p] for p in role_to_pids[role] if p in pid_to_idx]
+            if idxs:
+                role_means[r_idx, layer, :] = acts[idxs].mean(axis=0)
+        d_idxs = [pid_to_idx[p] for p in default_pids if p in pid_to_idx]
+        if d_idxs:
+            default_means[layer, :] = acts[d_idxs].mean(axis=0)
+
+    # AA per layer: default Assistant minus mean of role vectors, L2-normalized.
+    aa_np = default_means - role_means.mean(axis=0)
+    aa_np = aa_np / np.clip(np.linalg.norm(aa_np, axis=1, keepdims=True), 1e-9, None)
+
+    aa = torch.from_numpy(aa_np)
+    role_stack = torch.from_numpy(role_means)
+    _log(
+        f"step 2: bootstrap AA shape={tuple(aa.shape)}, role_stack shape={tuple(role_stack.shape)}"
+    )
+    return aa, role_stack
+
+
 def step_2_pca_aa_fit(cfg: dict, out_dir: Path) -> dict:
-    """Step 2: PCA on paper's released 275-role-vector cache + L* selection."""
+    """Step 2: PCA on per-subject role vectors + L* selection.
+
+    Sources of role vectors (see _load_or_bootstrap_aa_and_roles):
+      - Tier 1 (gemma_2_27b, qwen_3_32b): paper's HF release.
+      - Tier 2 (gemma_4_31b_*): bootstrap from this run's step-1b activations.
+    """
     import numpy as np
     import torch
     from safetensors.torch import save_file
@@ -303,12 +422,8 @@ def step_2_pca_aa_fit(cfg: dict, out_dir: Path) -> dict:
         _log(f"step 2: skipped (marker exists)")
         return json.loads(marker.read_text())
 
-    paper_dir = Path("data/paper_artifacts/assistant_axis_vectors/gemma-2-27b")
-    aa = torch.load(paper_dir / "assistant_axis.pt", weights_only=True)  # (46, 4608)
-    role_files = sorted((paper_dir / "role_vectors").iterdir())
-    role_stack = torch.stack([torch.load(p, weights_only=True) for p in role_files], dim=0)
+    aa, role_stack = _load_or_bootstrap_aa_and_roles(cfg, out_dir)
     n_layers, d_model = aa.shape
-    _log(f"step 2: {len(role_files)} role vectors, AA shape={tuple(aa.shape)}")
 
     pc1_per_layer = np.zeros((n_layers, d_model), dtype=np.float32)
     pcs_at_lstar = None
@@ -354,6 +469,16 @@ def step_2_pca_aa_fit(cfg: dict, out_dir: Path) -> dict:
     (extraction_dir / "L_star.txt").write_text(str(l_star))
     (extraction_dir / "per_layer_cos_sim.json").write_text(json.dumps(sims.tolist(), indent=2))
 
+    n_role_vectors = int(role_stack.shape[0])
+    pca_meta = {
+        "n_role_vectors": n_role_vectors,
+        "n_layers": int(n_layers),
+        "d_model": int(d_model),
+        "l_star": int(l_star),
+        "source": "paper_artifact" if cfg["model_id"] in _PAPER_ARTIFACT_DIRS else "bootstrap",
+    }
+    (extraction_dir / "pca_meta.json").write_text(json.dumps(pca_meta, indent=2))
+
     payload = {
         "l_star": int(l_star),
         "cos_sim_at_lstar": float(sim_at_lstar),
@@ -361,7 +486,7 @@ def step_2_pca_aa_fit(cfg: dict, out_dir: Path) -> dict:
         "max_cos_sim": float(sims.max()),
         "n_pcs_saved": int(top_k),
         "d_model": int(d_model),
-        "n_role_vectors": int(len(role_files)),
+        "n_role_vectors": n_role_vectors,
     }
     _mark_done(marker, payload)
     return payload
@@ -381,11 +506,21 @@ def step_3_tau_calibration(cfg: dict, out_dir: Path, l_star: int) -> Path:
         _log(f"step 3: skipped (marker exists)")
         return tau_path
 
-    aa_full = load_file(str(out_dir / "extraction" / "aa.safetensors"))["aa"]  # (46, 4608)
-    capping_center = l_star + cfg["capping_center_offset_from_lstar"]
-    capping_width = cfg["capping_width"]
-    half = capping_width // 2
-    capping_layers = list(range(max(0, capping_center - half), min(46, capping_center + half)))
+    aa_full = load_file(str(out_dir / "extraction" / "aa.safetensors"))["aa"]  # (n_layers, d_model)
+    n_layers = int(aa_full.shape[0])
+    explicit = cfg.get("capping_layers_explicit")
+    if explicit is not None:
+        # Paper-verbatim or pinned range: [start, end] inclusive (matches paper §5.1.2 convention).
+        start, end = int(explicit[0]), int(explicit[1])
+        capping_layers = list(range(max(0, start), min(n_layers, end + 1)))
+    else:
+        # L*-relative fallback (Gemma 2 27B Plan B heuristic; paper didn't publish a range).
+        capping_center = l_star + int(cfg["capping_center_offset_from_lstar"])
+        capping_width = int(cfg["capping_width"])
+        half = capping_width // 2
+        capping_layers = list(
+            range(max(0, capping_center - half), min(n_layers, capping_center + half))
+        )
     _log(f"step 3: capping range = {capping_layers}")
 
     tau_dist: dict[int, dict] = {}
@@ -624,6 +759,10 @@ def step_6_steered_runs(cfg: dict, out_dir: Path, l_star: int, lmsys_norm: float
     # All 500 DAN prompts (same as baseline).
     dan_prompts = out_dir / "rollouts" / "_dan_500.parquet"
 
+    from src.utils.config import resolved_steered_backend
+    backend = resolved_steered_backend(cfg["model_id"])
+    _log(f"step 6: steered backend = {backend} (resolved from subjects.yaml::{cfg['model_id']}.steered_backend)")
+
     for cond in conditions:
         cond_path = rollouts_dir / f"steered_{cond['condition_id']}.parquet"
         if cond_path.exists():
@@ -635,7 +774,7 @@ def step_6_steered_runs(cfg: dict, out_dir: Path, l_star: int, lmsys_norm: float
             "src.evaluation.run_subject_rollouts",
             {
                 "model_id": cfg["model_id"],
-                "backend": "hf",
+                "backend": backend,
                 "prompts_path": str(dan_prompts),
                 "output_path": str(cond_path),
                 "condition_id": cond["condition_id"],
@@ -1012,8 +1151,14 @@ def step_10_figures(cfg: dict, out_dir: Path, metrics: dict) -> dict:
     pc_path, pc_html = render_harm_rate_per_condition(metrics["per_condition"], fig_dir)
 
     eig = np.load(out_dir / "extraction" / "eigenspectrum.npy")
+    # n_samples + d_model resolved per-subject from step 2's pca_meta.json sidecar.
+    pca_meta = json.loads((out_dir / "extraction" / "pca_meta.json").read_text())
     s_path, s_html = render_scree_plot(
-        eig, out_dir=fig_dir, n_samples=275, d_model=4608, top_k=20
+        eig,
+        out_dir=fig_dir,
+        n_samples=int(pca_meta["n_role_vectors"]),
+        d_model=int(pca_meta["d_model"]),
+        top_k=20,
     )
 
     headline = metrics["headline"]
@@ -1068,9 +1213,29 @@ def _apply_role_subset_for_smoke(cfg: dict, all_role_names: list[str]) -> list[s
     return all_role_names[:10]
 
 
+_KNOWN_SUBJECTS = {
+    "gemma_2_27b": "configs/plan_b.yaml",                          # original Plan B run (kept for resume / re-run)
+    "qwen_3_32b": "configs/plan_b_qwen_3_32b.yaml",                # Phase A new subject 1
+    "gemma_4_31b_thinking_on": "configs/plan_b_gemma_4_31b_thinking_on.yaml",   # Phase A new subject 2
+    "gemma_4_31b_thinking_off": "configs/plan_b_gemma_4_31b_thinking_off.yaml", # Phase A new subject 3
+}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/plan_b.yaml", type=Path)
+    parser.add_argument(
+        "--subject",
+        choices=sorted(_KNOWN_SUBJECTS.keys()),
+        help="Resolve --config from configs/plan_b_<subject>.yaml. "
+             "Pinned per may_3_directive.md Pre-execution gate #2 (Gate 2).",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        type=Path,
+        help="Explicit config path. If omitted, --subject must be given. "
+             "Defaults to configs/plan_b.yaml only when neither flag is set (legacy).",
+    )
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -1080,10 +1245,36 @@ def main() -> None:
     parser.add_argument("--skip", nargs="*", default=[], help="step names to skip (e.g. 1a 1b)")
     cli = parser.parse_args()
 
+    if cli.subject is not None and cli.config is not None:
+        parser.error("--subject and --config are mutually exclusive")
+    if cli.subject is not None:
+        cli.config = Path(_KNOWN_SUBJECTS[cli.subject])
+    elif cli.config is None:
+        cli.config = Path("configs/plan_b.yaml")
+
+    if not cli.config.is_absolute():
+        from src.utils.config import REPO_ROOT
+        cli.config = REPO_ROOT / cli.config
+    if not cli.config.exists():
+        parser.error(f"config not found: {cli.config}")
+
     cfg = yaml.safe_load(cli.config.read_text())
     if cli.smoke:
         cfg = _apply_smoke_overrides(cfg)
         _log("SMOKE MODE — reduced volumes per src.experiments.plan_b._apply_smoke_overrides")
+    _log(f"loaded config from {cli.config} (model_id={cfg['model_id']})")
+
+    # Fail-loudly venv guard — sglang subjects need .venv-sglang/bin/python.
+    # Fires before any phase runs; saves hours when launched from the wrong env.
+    # Skipped when step 6 (steered runs — the only SGLang-using step) is in --skip.
+    # This is the Phase A path: extraction + baseline + judge + analysis only,
+    # no steered conditions, so vLLM .venv is sufficient.
+    if "6" in cli.skip:
+        _log("step 6 in --skip; venv guard bypassed (no SGLang needed for Phase A scope)")
+    else:
+        from src.utils.config import assert_venv_for_subject
+        assert_venv_for_subject(cfg["model_id"])
+
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "config.yaml").write_text(yaml.safe_dump(cfg, default_flow_style=False))

@@ -1,0 +1,72 @@
+# Phase A — Plan B replay on Gemma 4 31B (thinking ON), subject 3 of 4 per may_3_directive.md.
+#
+# Differences from configs/plan_b.yaml (Gemma 2 27B):
+#   - model_id resolves to subjects.yaml::gemma_4_31b_thinking_on (added 2026-04-30)
+#     which carries chat_template_kwargs.enable_thinking=true
+#   - Per CLAUDE.md "Models" → Tier 2 core: extraction must split activations at
+#     thinking-tokens vs answer-tokens and fit PCAs on each (compare). Hooks +
+#     weights identical to thinking-off entry; the per-rollout span tagging
+#     happens in src/extraction/backend_hf.py via tokenizer-driven span detection.
+#   - Capping range pick same as thinking-off (center 50% width 8 τ=25th); the
+#     2D sweep + thinking-vs-answer scoped variants are Stage 4 T4.0 (post-Phase A).
+#   - Generation costs more wall-clock per prompt because thinking traces add
+#     1-3K tokens; n_role_rollouts_per_role kept at 30 but max_new_tokens bumped
+#     to allow the thinking trace + answer.
+#
+# Hardware: 1× RTX PRO 6000 Blackwell 96 GB, TP=1.
+# Steered backend = HF.
+
+experiment_id: phase_a_gemma_4_31b_thinking_on
+seed: 42
+output_dir: results/phase_a/gemma_4_31b_thinking_on
+
+model_id: gemma_4_31b_thinking_on
+dtype: bf16
+tensor_parallel: 1
+
+n_dan_prompts: 500
+n_role_rollouts_per_role: 30
+n_default_assistant_rollouts: 50
+n_random_baselines: 5
+
+expected_l_star: null
+extraction_layers_for_pca: null
+top_k_pcs: 10
+
+# Phase A protocol carries the thinking-vs-answer span split via the
+# extraction backend; the orchestrator-level config just opts in. The PCA
+# comparison artifacts land under output_dir/extraction/{thinking,answer}/.
+extract_thinking_answer_split: true
+
+capping_center_offset_from_lstar: null
+capping_width: 8
+capping_layers_explicit: [27, 34]
+tau_percentile: 25
+
+pc_indices_to_steer: [2, 3]
+steering_lambdas: [0.25]
+random_baseline_lambda: 0.25
+
+extraction_profile: short
+baseline_profile: long
+hf_steered_batch_size: 8
+hf_steered_max_input_len: 4096
+max_new_tokens: 2048              # thinking trace + answer; bumped from 1024 after thinking-off truncation audit
+                                  # (thinking traces typically 200-1500 tok + 100-300 tok answer; 2048 gives p99 headroom)
+
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml
+
+gpt55_validation:
+  enabled: false
+  reason: "cross-judge dropped per may_3_directive amendment 2026-04-30"
+
+mvp_only: true
+
+acceptance:
+  aa_cap_min_reduction_pp: 30.0
+  pc_recovery_min_pp: 10.0
+  random_recovery_max_pp: 5.0
+  pc1_aa_cos_sim_min: 0.7
+  blind_spot_auc_lift_min: 0.02
+  judge_agreement_min: 0.85

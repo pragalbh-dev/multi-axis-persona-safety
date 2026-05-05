@@ -62,6 +62,7 @@ def run_in_subprocess(
     *,
     timeout_seconds: int | None = None,
     extra_env: dict[str, str] | None = None,
+    python_executable: str | None = None,
 ) -> dict:
     """Run a work-module in a fresh Python subprocess and return its JSON output.
 
@@ -107,8 +108,10 @@ def run_in_subprocess(
 
     args_path.write_text(json.dumps(args, indent=2, default=str))
 
+    # python_executable lets a parent on .venv-sglang spawn judge children on
+    # .venv (vLLM-only) and vice-versa. Defaults to the parent's interpreter.
     cmd = [
-        sys.executable,
+        python_executable or sys.executable,
         "-m",
         work_module,
         "--args-json",

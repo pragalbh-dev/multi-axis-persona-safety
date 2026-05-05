@@ -514,3 +514,308 @@ min: 0.6829 (layer 7); max: 0.8825 (layer 21)
 **Downstream dependencies:** all of Plan B Step 6 condition outputs, Step 7a judge labels, Step 7b per-prompt projections, Step 9 metrics (per-condition harm rates + LASSO blind-spot lift recomputed across 5 not 11 conditions), Step 10 figures (bar chart shows fewer bars; honest reflection of MVP scope), `docs/index.html` page text + headline numbers (post-run update).
 
 **Pre-fix run artifacts:** `metrics.json.broken`, `details.parquet.broken`, `tau_calibration.json.old` archived under `results/plan_b_gemma2_27b/_pre_signfix_backup/`. Five non-MVP broken steered parquets archived under `results/plan_b_gemma2_27b/rollouts/broken_pre_signfix/` for retrospective audit.
+
+---
+
+## [2026-04-30 14:30] Stage 7 spike — SGLang `--forward-hooks` viability
+
+**Decision:** Mixed-backend rollout. Wire SGLang as the steered-rollout backend for **Gemma 2 27B and Qwen 3 32B**; keep **Gemma 4 31B (thinking-ON and thinking-OFF) on HF + ActivationSteering**. Per-subject opt-in via `cfg.steered_backend ∈ {hf, sglang}` on the experiment config.
+
+**Why:** The spike (`plans/sglang_post_plan_b_spike.md` "Results" section) demonstrated:
+
+- SGLang 0.5.10's `--forward-hooks` works end-to-end on Gemma 2 27B with our 4 hook factories (`addition`, `capping`, `cap_and_steer` as two ordered hooks, `multi_axis_cap`). Hooks fire on every decode step (proven by SGLang outputs diverging from unsteered baseline). Cross-backend token match is 29-44 tokens out of 64; the remainder is bf16 kernel drift, not hook math.
+- **Throughput on Gemma 2 27B (100 DAN-jailbreak prompts × 256 tok, batch=16, max_input_len=1024, bf16, T=0):** HF 154 tps, SGLang 284 tps → **1.85× per-token speedup, ~2.8× wall-clock** (HF generates more tokens because batched `generate` keeps producing padding for finished rows; SGLang honors EOS). Capping overhead is negligible on both (HF 154.0→154.5, SGLang 284.0→284.8).
+- SGLang 0.5.10 has **no native `gemma4.py`**; the transformers-backend fallback path crashes in FlashInfer rmsnorm on Gemma 4's per-head `v_norm` (`Mismatched mW.shape[0]`). Upstream limitation; no clean workaround on this version. Gemma 4 stays HF.
+
+**Spike workarounds applied (one-time host setup):**
+- Installed `cuda-toolkit-12-9` via NVIDIA's official apt repo (~3 GB) — required because SGLang JIT-compiles `fused_rope` and `resolve_future_token_ids` for sm_120, and pip's `nvidia-cuda-nvcc-cu12` ships only `ptxas`, not `nvcc`. Driver and `.venv` (vllm) untouched.
+- Patched `external/assistant-axis/assistant_axis/steering.py:_POSSIBLE_LAYER_ATTRS` to add `"model.language_model.layers"` for Gemma 4's `Gemma4ForConditionalGeneration` arch.
+- Discovered & fixed: SGLang's continuous batching presents activations as `(N, d)` not `(B, L, d)`; hook factory now handles both. `threading.Lock` in factory broke `torch.compile` — removed (GIL-safe `+=` for debug counter).
+
+**Cost / benefit on the post-Plan-B sweep (4 subjects × 1100 prompts × 2 datasets × steered):**
+- HF-only baseline: ~95 hr.
+- Mixed (Gemma 2 + Qwen 3 on SGLang, both Gemma 4 modes on HF): **~80 hr (saves ~15 hr)**. Modest because Gemma 4 thinking-ON + thinking-OFF still need HF and dominate.
+- All-SGLang hypothetical: ~34 hr (saved ~61 hr) — what the original plan B spike doc projected, but unreachable on SGLang 0.5.10.
+
+**Hardware deviation noted:** Spike host is **1× RTX PRO 6000 Blackwell 96 GB**, not the 4× RTX 5090 32 GB documented in CLAUDE.md. TP=1 throughout. CLAUDE.md "Current State" / "Hardware" should be updated separately.
+
+**Alternatives considered:**
+- All-HF (status quo): no upstream risk, but ~15 hr slower and doesn't validate the path forward when Gemma 4 SGLang lands upstream.
+- All-SGLang including Gemma 4 via the transformers-backend path: blocked by the FlashInfer rmsnorm bug; no known fix on 0.5.10.
+- Wait for SGLang upstream `gemma4.py`: defer the spike. Rejected because Gemma 2 + Qwen 3 savings are accessible *now*.
+
+**Reversibility:** high. The mixed backend is a per-subject config flag; flipping back to all-HF is a one-line change in the experiment config. The hook-factory module is additive (new file); the `steering.py` patch is a one-line addition that doesn't affect Gemma 2/Qwen 3 paths. cuda-toolkit-12-9 install is the only persistent host change.
+
+**Downstream dependencies:** `src/evaluation/run_subject_rollouts.py` needs a new `_run_sglang` branch (mirror of `_run_hf`); `configs/inference_runtime.yaml` needs an `sglang` profile; `scripts/phased_pipeline_smoke.py` to read `cfg.steered_backend`. None of these are done in the spike — they're follow-up work gated on this verdict.
+
+**Source artifacts (all committed to repo, gitignored where appropriate):**
+- `plans/sglang_post_plan_b_spike.md` — full Results section
+- `src/steering/sglang_hook_factories.py` — 4 hook factories matching upstream `_apply_*` math
+- `tests/integration/sglang_hooks_smoke.py` — 4-phase orchestrator (setup / hf / sglang / compare)
+- `scripts/bench_sglang_vs_hf.py` — throughput benchmark
+- `scripts/run_sglang_spike.sh`, `scripts/run_throughput_bench.sh` — drivers
+- `results/sglang_spike/{gemma2/, gemma4/, throughput.json, equivalence.json}` — raw spike data
+- `external/assistant-axis/assistant_axis/steering.py:34-41` — `_POSSIBLE_LAYER_ATTRS` patch for Gemma 4
+
+
+## [2026-04-30 17:15] May 3 directive amendment — 1-GPU TP=1, no co-host, drop cross-judge
+
+**Type:** scope amendment (binding for the May 3 window)
+**Source:** user direction during Gate 2 kickoff conversation 2026-04-30
+**Reversibility:** trivially reversible if hardware returns to 4× RTX 5090 (subjects.yaml TP-clamp + the `--subject` refactor are both hardware-agnostic)
+
+**Decisions:**
+
+1. **Hardware = 1× RTX PRO 6000 Blackwell 96 GB.** TP=1 across all 4 subjects + judge for the entire May 3 window. The original directive's 4× RTX 5090 / 128 GB / TP=4 assumption no longer holds. `subjects.yaml::tensor_parallel_size: 4` is left at 4 because `src/utils/config.load_subjects` auto-clamps to `torch.cuda.device_count()` at load time — no YAML edit needed for the field, but downstream wall-clock estimates need to be re-grounded by Phase A's first measurements (likely 3-4× slower per phase than the directive's TP=4 budget).
+
+2. **No co-hosting.** Even when a subject leaves headroom on the 96 GB card, the next model does not co-load. Always: load subject → run → tear down → load judge → run → tear down → load next subject. Same rule for the judge. CLAUDE.md "Inference & Serving" exception clause (which permitted co-hosting when ≥2 GPUs free) is suspended for the May 3 window. Reason: at TP=1 the subject already consumes 80-95 GB; co-hosting risks OOM on transient allocator spikes.
+
+3. **Cross-check judge dropped entirely.** Gemma 4 31B-it cross-check is no longer in scope for this window — not just per-subject. The previous directive Cuts table listed it as a cut-with-add-back-path; the amendment hardens it to "not re-runnable in this window." Headline harm rests on Qwen 3.6-27B primary alone, validated to 93% binary agreement vs GPT-5.5 on the 200-sample Plan B cross-check (already exceeds paper's 91.6% deepseek-v3-vs-human bar).
+
+4. **GPT-5.5 step disabled in all 3 new per-subject configs** (`configs/plan_b_qwen_3_32b.yaml`, `configs/plan_b_gemma_4_31b_thinking_on.yaml`, `configs/plan_b_gemma_4_31b_thinking_off.yaml`). Set via `gpt55_validation.enabled: false`; `step_8` does not yet read this flag, so runs must also pass `--skip 8` as belt + braces. Optional follow-up: wire `step_8` to honor the YAML flag.
+
+5. **Gemma 4 31B thinking modes split into two `subjects.yaml` entries** (was one entry with per-call ctk override). `gemma_4_31b_thinking_on` and `gemma_4_31b_thinking_off` share `hf_id: google/gemma-4-31B-it` and differ only in `chat_template_kwargs.enable_thinking`. `paper_capping_ranges.yaml` already used these split keys → naming is now consistent across the project.
+
+**How to revert (per item):**
+1. Restore `tensor_parallel_size: 4` references in any TP=1-tuned profiles once 4× RTX 5090 is back. No YAML edits required for this commit.
+2. Delete or unset the "no co-host" paragraph in `may_3_directive.md`; re-enable CLAUDE.md exception clause.
+3. To re-introduce cross-judge later, copy the `judge_crosscheck_id` block from `src/utils/config.py` and add a new step to `plan_b.py`.
+4. Set `gpt55_validation.enabled: true` and remove the `--skip 8` flag at runtime.
+5. To merge the Gemma 4 thinking entries back, delete the two new entries in `subjects.yaml` and revive the old per-call ctk override path in `smoke_load.py` and `plan_b_<...>.yaml`.
+
+**Files changed:**
+- `plans/may_3_directive.md` — Hardware amendment paragraph at top + Plan amendment section at bottom.
+- `configs/subjects.yaml` — added 2 entries.
+- `configs/plan_b_qwen_3_32b.yaml`, `configs/plan_b_gemma_4_31b_thinking_on.yaml`, `configs/plan_b_gemma_4_31b_thinking_off.yaml` — new files.
+- `src/experiments/plan_b.py::main` — `--subject` flag + `_KNOWN_SUBJECTS` map.
+- `plans/progress.md` — Gate 2 → Phase A handoff block.
+
+
+## [2026-04-30 17:55] Phase A — multi-subject orchestrator generalisation + bootstrap path
+
+**Decision.** Generalise `src/experiments/plan_b.py` to handle the 3 new Phase A subjects (qwen_3_32b, gemma_4_31b_thinking_on/off) without forking the orchestrator. Two distinct paths in `step_2`:
+1. **Paper-artifact path** for Tier 1 subjects whose AA + role vectors are released on HF (`gemma_2_27b`, `qwen_3_32b`). Loads `data/paper_artifacts/assistant_axis_vectors/<subject>/{assistant_axis.pt, role_vectors/*.pt}` verbatim.
+2. **Bootstrap path** for Tier 2 subjects with no paper artifacts (`gemma_4_31b_*`). Derives AA + role vectors from this run's step-1b cached per-rollout activations: group rows by `prompt_id` prefix (`role::<name>::*` → role vectors via mean-of-rollouts; `default::*` → default-Assistant mean), then `AA = mean(default) − mean(role_vectors)` per layer, L2-normalised.
+
+**Why.** The original orchestrator was Gemma-2-27B-only (hardcoded `range(46)` layer count, hardcoded `gemma-2-27b/role_vectors` path). The directive's Phase A applies the same H1-demonstration pipeline to 4 subjects. The bootstrap path is necessary because the paper did not run Tier 2 (Gemma 4) extraction — there are no released artifacts for those subjects. The paper's protocol (line 96, line ~468) is identical for both tiers; the only difference is whether someone else has already done step 1a/1b for you.
+
+**How to apply.** Per-subject Phase A launch: `uv run python -m src.experiments.plan_b --subject <id> --skip 6 8 10`. Skips: step 6 (steered runs — Phase B), step 8 (GPT-5.5 cross-check dropped per 2026-04-30 amendment), step 10 (figures — Phase F handles cross-subject panels). Single launch covers extraction → PCA + AA → baseline 500 DAN → judge → per-prompt projections → analysis (LASSO + blind-spot lift). Marker-based resume per CLAUDE.md "Do NOT" rule still applies.
+
+**Validation.** Ran the bootstrap path on Gemma 2 27B (which has both paper artifacts and cached step-1b data) as ground truth. Initial run produced AA cos_sim −0.19 vs paper's AA — debugged to a `condition_id`-vs-`role_name` filter bug (`run_subject_rollouts` overwrites `condition_id` to "role_rollout" for every row including default-Assistant, masking the 50 default rows when filtered by `condition_id == "default_assistant"`). Switched to `prompt_id` prefix split (`role::*` vs `default::*`). Re-validated: AA cos_sim mean 0.82, max 0.93, L=22 (Gemma 2 L*) = 0.86; role vectors at L=22 across 275 matched roles cos_sim mean 0.99, min 0.97. Remaining gap to paper explained by sample size (paper: 1200 rollouts/role; us: 30/role) and the absence of paper's "fully vs somewhat" split. Fix lives in `_load_or_bootstrap_aa_and_roles` only; Qwen 3 32B Phase A run uses paper artifacts and was unaffected.
+
+**Reversibility.** Patches are localised to `src/experiments/plan_b.py`. Reverting to the Gemma-2-only orchestrator means restoring the hardcoded constants in `step_1b`, `step_2`, `step_3`, `step_10` and removing `_load_or_bootstrap_aa_and_roles` + `_PAPER_ARTIFACT_DIRS`. No schema or cache-layout changes; the new `extraction/pca_meta.json` sidecar is additive (downstream code reads it via `.get(...)` fallbacks).
+
+**Source.** This conversation 2026-04-30 ~17:50 UTC. Phase A Qwen 3 32B run launched at 17:50 (PID 80682). Gemma 4 modes queued behind it (single-GPU host, no co-hosting per may_3_directive amendment).
+
+
+## [2026-05-01 13:16] Phase A — completion + 3 findings worth report-level treatment
+
+**Decision.** Lock the cross-subject Phase A results table (see `plans/progress.md` 2026-05-01 13:16 entry) as the H1 input for Phase B + report. Three findings warrant explicit highlight in the report:
+
+1. **L\* shifts dramatically with thinking mode on identical weights.** Gemma 4 31B `enable_thinking=false` → L\*=14 (~23% depth); same model with `enable_thinking=true` → L\*=59 (~98% depth). Same role-conditioning prompts in both cases. Suggests reasoning models construct AA-aligned identity at the very last layer (after the deliberation completes) rather than throughout.
+
+2. **Thinking-on concentrates safety-relevant features along AA.** AUC(AA-only) climbs from 0.576 (off) → 0.813 (on). Higher-PC blind-spot lift drops correspondingly: 0.295 → 0.101. Both on the same weights, identical PCA + LASSO pipeline. Implies for reasoning models, AA-only capping (paper's defense) may be near-optimal; the H1 motivation for multi-axis defense is weaker for thinking-on subjects than for thinking-off ones. **This is methodologically important** and reframes the H1 story: multi-axis matters MORE for non-reasoning + tightly-aligned models, LESS for reasoning models.
+
+3. **L\* in our runs is systematically shallower than paper's "middle".** Qwen L\*=11/64 (~17%) vs paper's reported middle (~32, ~50%); g4_off L\*=14/60 (~23%); g4_on L\*=59 (~98%, opposite extreme). Worth inspecting per_layer_cos_sim.json curves before Phase B to verify the argmax isn't on a flat plateau or noise. If real, the divergence may reflect bf16 vs paper's reference precision, or tokenizer/chat-template differences.
+
+**Why.** The above pattern is unexpected (we predicted the H1 multi-axis lift to generalize across reasoning modes); it is reproducible (came out of two independent paths — paper-artifact for Qwen, bootstrap for both Gemma 4 modes); CIs all exclude 0 with margin. Anchoring it now in `decisions.md` so post-/compact agents have it.
+
+**How to apply.** (a) Phase B should still run multi-axis defense on all 4 subjects (Gemma 2 27B from cached + the 3 above), but the report should frame the H1 result as "multi-axis safety geometry is a property of non-reasoning models / tightly-aligned text-only models" rather than universal. (b) For thinking-on Phase B specifically: use per-layer lmsys norms when scaling steering vectors (the L\*=59 norm = 6.21 is 50× smaller than typical mid-layer norms; using it as the global scale would mismatch capping at layers 27-34). (c) Per_layer_cos_sim curve shape inspection is a Phase B prerequisite — flag in `plans/may_3_directive.md` Phase B section.
+
+**Reversibility.** Findings derive from on-disk artifacts (`results/phase_a/<subject>/{metrics.json, extraction/}`); reproducible from those files. Re-running Phase A would produce same numbers up to bootstrap CI variation.
+
+**Source.** Phase A multi-subject sweep 2026-04-30 17:50 → 2026-05-01 13:16 UTC. Patches log: `plans/progress.md` 2026-04-30 17:50 entry. Patches: `src/experiments/plan_b.py` (subject-aware step_2 with paper-artifact + bootstrap dual-path), `src/experiments/plan_b.py` (dynamic n_layers in step_1b, explicit-layers handling in step_3), `external/assistant-axis/internals/model.py` (Gemma 4 layer-discovery path), `configs/inference_runtime.yaml` (per-thinking-mode entries for gemma_4_31b), `configs/plan_b_gemma_4_31b_thinking_on.yaml` (max_new_tokens 1024 → 2048 after truncation audit), new infra: `scripts/{chain_phase_a_subjects.sh, sanity_check_phase_a.py, audit_truncation.py, launch_phase_a_subject.sh}`.
+
+---
+
+## [2026-05-03 14:00] Post-Phase-B retrim — drop Phase C, scope Phase D, defer thinking-split
+
+**Decision:** After completing Phase A (4 subjects) and Phase B (attack arm + first multi-axis-cap shot, 4 subjects), re-scope the remaining work in `plans/may_3_directive.md` based on what Phase B's headlines actually showed:
+
+1. **Phase C (Stage 5 Composition) — DEFERRED to extension.** Moved to `plans/extensions_post_plan_b.md` as Ext H. H3 (linearity vs manifold) doesn't sharpen the H1+H2 narrative the Phase B data made strongest.
+2. **Stage 6 / Phase D — SCOPED to Gemma 4 31B thinking-OFF only.** Qwen and g4_on don't have a multi-axis question to answer (Qwen: AA alone sufficient; g4_on: blind spot is small). Only g4_off (where AA cap *fails*: 10.2% → 11.2%, and PC3 attack recovers to 23.6%) has a real "does multi-axis close the gap?" question.
+3. **Stage 6 Phase B (cross-percentile τ sweep) — CUT entirely.** 5^k grid doesn't pay back; per-direction τ + layer-range fit is sufficient.
+4. **Phase E capability eval — TRIMMED.** 4 subjects × {unsteered, AA-cap} × {IFEval, GSM8k, EQ-Bench}. Multi-axis condition only for g4_off. MMLU-Pro dropped (revivable on demand).
+5. **Ext B causal v_harm test — SCOPED to g4_off + g4_on only.** Cos(v_harm, AA) = 0.05 and 0.56 are the two interesting geometries; Qwen (0.13) and Gemma 2 27B already covered.
+6. **Ext D bypass interpretation — KEEP** (analysis-only on existing rollouts).
+7. **Thinking-vs-answer activation split — DEFERRED to Stage 7 Ext 2 / extensions_post_plan_b.md Ext I.** The `extract_thinking_answer_split: true` config flag was never honored by `src/extraction/backend_hf.py`; Phase A's g4_on PCA was fit on pooled thinking+answer tokens. The current numbers stand for now; the split is a follow-up that refits per-span PCA and re-derives AA + blind-spot lift on the answer-only subset.
+
+**Total remaining:** ~38-50 hr compute + ~5-8 hr writeup. Time-pressure removed (May 3 deadline past); threads run sequentially.
+
+**Alternatives considered:**
+- Run Phase C on Gemma 2 27B only (cached) — rejected; no clean way to scope a single-subject H3 result without making the rest of the report look incomplete.
+- Run Stage 6 on all 4 subjects regardless — rejected; Phase B's `multi_signmatched_pos1` numbers already showed Qwen + g4_on don't gain from multi-axis. Burning ~16-20 hr to confirm a null result is not worth it.
+- Run thinking-split now (Phase A.5) — rejected; would force rolling back Phase B for g4_on and re-running steered conditions on changed AA/PCs. Cleaner to ship current artifacts and add the split as a sanity check post-writeup.
+
+**Reason:** Phase B's results changed the narrative shape. The strongest finding is now "AA-cap defence fails on Gemma 4 31B thinking-off, and PC3 attack recovers harm to 23.6%" — a direct H1+H2 demonstration on a single subject. Diluting effort across composition + 4-subject multi-axis + full capability matrix would weaken rather than strengthen the writeup.
+
+**Source:** Conversation 2026-05-03 between user (pragalbh-dev) + agent. Phase B headlines: `results/phase_b/{qwen_3_32b, gemma_4_31b_thinking_off, gemma_4_31b_thinking_on}/headline.json`. Plan amendment: `plans/may_3_directive.md` "Plan amendment 2026-05-03" section.
+
+**Reversibility:** medium-high.
+- Phase C revival: pick up `plans/stage-5-composition.md` + Ext H entry. ~12-15 hr cost.
+- Stage 6 expansion to 4 subjects: re-add Qwen / g4_on per-direction τ calibration. ~4-6 hr each.
+- Phase E expansion: re-add MMLU-Pro / multi-axis-cap × Qwen + g4_on. ~8-10 hr.
+- Thinking-split: patch `src/extraction/backend_hf.py` + re-run g4_on step_1b/step_2/step_3 with split. ~4-5 hr. (Ext I in `extensions_post_plan_b.md`.)
+
+**How to revert:** Edit `plans/may_3_directive.md` "Plan amendment 2026-05-03" section + un-defer the relevant entries from `plans/extensions_post_plan_b.md`. No code changes pending; no artifacts to discard.
+
+**Downstream dependencies:**
+- Phase F report figures will reflect the trimmed scope (no composition panel; multi-axis-defence panel is single-subject). If Ext H is later run, Phase F will need a composition panel addendum.
+- Capability writeup loses MMLU-Pro coverage; flag in limitations.
+- The thinking-mode L* finding (L*=14 vs L*=59) is reported on pooled-token PCA; flag this caveat in the writeup until Ext I lands.
+
+## [2026-05-03 09:45] Phase D thread A — multi-axis cap sign convention for PC2/PC3
+
+**Decision:** For Phase D's multi-axis cap (`AA + PC2 + PC3`), the per-layer cap-vector inputs to `from_config` for PC2 and PC3 are stored as **`-signmatched_pc{2,3}` × lmsys_norm** (i.e., harm-NEGATIVE direction, the analog of Phase B's Assistant-positive AA = "good direction"). Cap thresholds use the formula `-p<X>` of role-rollout projections onto the (negated) cap-vector input direction at each capping layer — exactly matching Phase B's AA convention. The user-facing percentile labels {p1, p10, p25, p50, p75} run from most-aggressive (p1: cap fires for >99% of activations) to least-aggressive (p75: cap fires for ~25%).
+
+**Alternatives considered:**
+- Pass `+signmatched_pc{2,3}` (harm-positive) as cap input, with `cap_threshold = -p<X>` of role projection on that direction. Rejected: traced the steerer auto-negation through the upstream `_apply_cap` math and showed this orientation pushes activations FURTHER harm-aligned (subtracts in the harm-positive direction when h's harm-negative projection exceeds τ — the opposite of the intended defence).
+- Sweep BOTH signs in calibration to let data pick. Rejected: doubles validation cost (4000 generations vs 2000) for a sign that can be derived analytically from the cap math + Phase B's existing AA convention.
+- Use Assistant-aligned PC sign (sign of `<mean_default - mean_role, PC>`). Rejected: PC2/PC3 are PCA-orthogonal to PC1≈AA by construction, so `<AA, PC2/3> ≈ 0` — the Assistant-vs-role sign of higher PCs is essentially noise. Harm-aligned sign (= signmatched_pc_{2,3} as Phase B already computed) is the only meaningful reference for safety.
+
+**Reason:** Phase B's AA cap math is paper-validated end-to-end (Gemma 2 27B Plan B reduced harm 14.8% → 1.8%; g4_off Phase B AA-cap-only = 11.2%; Qwen Phase B AA-cap-only = 2.4%). To inherit that validation cleanly, Phase D's PC2/PC3 cap should match the same sign convention exactly: input vector points in the "good" direction so the steerer's `from_config(capping)` auto-negation flips it to the "bad" direction at the upstream cap, which then clamps the bad-direction projection from above and pushes activations back toward the good direction.
+
+**Source:**
+- Code: `src/steering/steerer.py:73-105` (the `from_config(capping)` negation block — comments dated 2026-04-26).
+- Phase B implementation: `src/experiments/phase_b.py:269-285` (`step_1_setup` building `aa_cap_files` + `cap_thresholds = -p75 of tau_calibration`).
+- Verification trace: `phase_d.py` step 1 sanity output at 2026-05-03 09:44 — PC2 @ L27 yields τ_p25 = -132.765 (= -p25 of role projection on harm-negative PC2 = +p75 of role projection on harm-positive PC2).
+
+**Reversibility:** high. Flip the sign in `step_1_setup._save_cap_vec` (drop the `-` on `-unit * lmsys_norm`) and change `_resolve_pc_tau` to use `+p<X>` instead of `-p<X>`. Re-run step 1 → step 10. ~8 hr cost if validation has to be redone, ~3 hr if test rollouts are still valid.
+
+**Downstream dependencies:**
+- Validation calibration picks (`τ_PC2`, `τ_PC3` percentiles) are interpreted in this sign convention.
+- Phase F report multi-axis-defence panel claims rest on this orientation being the intended defence direction.
+
+---
+
+## [2026-05-03 09:45] Phase D thread A — test-split reuses Phase B 508-prompt subset (not 550)
+
+**Decision:** Phase D's test split reuses Phase B's existing 508-prompt `_full_subset.parquet` exactly (not the directive's nominal "550-prompt test-split"). Validation uses 200 prompts disjoint from those 508. AA-cap × {none, adv-null, PC3-attack} test rows are read directly from `phase_b/g4_off/rollouts/full_judged.parquet` (no re-run); only the 6 new {AA+PC2, AA+PC2+PC3} × {none, adv-null, PC3-attack} cells are generated.
+
+**Alternatives considered:**
+- Sample a fresh 550-prompt test split per the directive's wording. Rejected: would force re-running AA-cap × 3 attacks on 550 new prompts (~3 cells × 30-40 min each = ~2 hr extra) for prompt-set parity that adds no statistical power vs reusing Phase B's already-judged 508.
+- Use 600 unused prompts for both validation (200) + test (400 instead of 550). Rejected: 400 is too small for the 6-cell test split (would dilute per-cell n).
+
+**Reason:** Apples-to-apples comparison with Phase B headlines is more important than hitting the directive's nominal n=550. Phase B already ran AA-cap × {none, adv-null, signmatched_pc3} on the 508 subset; reusing those rollouts saves ~2 hr of GPU time and keeps the AA-cap baseline identical to the published Phase B headline (avoiding a "did the AA-cap number change between Phase B and Phase D?" reviewer question).
+
+**Source:** Phase B output dir: `results/phase_b/gemma_4_31b_thinking_off/rollouts/full/`. Directive: `plans/may_3_directive.md` "Plan amendment 2026-05-03" thread A (mentions n=550 as the target, not as a hard constraint).
+
+**Reversibility:** high. Change `n_test_prompts` in `configs/phase_d_gemma_4_31b_thinking_off.yaml` and set `reuse_phase_b_aa_rollouts: false`. Re-run step 8 onward. ~3-4 hr cost.
+
+**Downstream dependencies:**
+- Headline table in `multi_axis_calibration.json` reports `n=508` per cell, not 550.
+- Cross-subject panels (Phase F) treating "n_test" as a column should read from each subject's `headline.json::test_split_n`, not assume 550.
+
+## [2026-05-03 12:25] Phase D thread A — PC2/PC3 cap layer scope: L*=14 single-layer (was: 8-layer range)
+
+**Decision:** PC2 and PC3 cap at the **PCA extraction layer L*=14 only**, as a single-layer hook. AA cap remains at the 8-layer range [27, 34] (unchanged from Phase B). The original Phase D scheme reused the L*=14 PC unit at every AA capping layer 27-34 (defence_arm.py convention), which broke generation entirely on g4_off.
+
+**What happened:** First Phase D run kicked off 09:45, finished step 2 (PC2 calibration sweep) at 11:18. Result: **0% coherence at all 5 percentile candidates {p1, p10, p25, p50, p75}** under signmatched_pc3 attack. Inspection of raw rollouts confirmed pure activation collapse — outputs were degenerate "same same same same..." token loops at every τ:
+
+```
+val_aa_pc2p1_atk_signmatched_pc3   nonsensical 200/200
+val_aa_pc2p10_atk_signmatched_pc3  nonsensical 200/200
+val_aa_pc2p25_atk_signmatched_pc3  nonsensical 200/200
+val_aa_pc2p50_atk_signmatched_pc3  nonsensical 200/200
+val_aa_pc2p75_atk_signmatched_pc3  nonsensical 200/200
+```
+
+**Root cause analysis:** With the L*=14 PC2 unit reused at layers 27-34, role-rollout projection magnitudes at each capping layer are large (mean ≈ +135, std ~5 along -signmatched_pc2 input direction at layer 27), but they don't track the actual safety-relevant geometry at those layers. The cap fires (as designed) for activations with harm-positive projection above τ, but the resulting excess is large (~80-180 in unit-projection space). Multiplied across 8 simultaneous capping layers and propagated through 8 transformer blocks of intervening computation, the cumulative subtraction in the harm-negative direction dwarfs the activation norm (~300) → residual stream is destroyed → token loop. AA cap doesn't suffer because per-layer AA tracks per-layer default-vs-role geometry, so excess is small (~3 at layer 27 in Phase B). PC2/PC3 reused at off-extraction layers does not have this property.
+
+**Alternatives considered:**
+- **Per-layer PCA refit at every capping layer.** Would give per-layer PC2/PC3 directions with naturally-scaled τ. Rejected: ~30 min CPU work and adds an axis-stability question (is "PC2" at layer 27 the same direction as PC2 at L*=14? Probably not — the role-mean structure varies across layers). Single-layer L*=14 cap avoids the question.
+- **Tighter percentiles (p99 of role distribution).** Would reduce how often the cap fires. Rejected: cap-fire frequency wasn't the issue; magnitude per fire was. Even tight percentile still subtracts ~80 per layer × 8 layers = catastrophic.
+- **Reduce cap-vector norm scaling.** Could divide the cap vector by N (e.g., lmsys_norm/4) to soften per-layer clamp. Rejected: would diverge from the upstream cap-math contract (which assumes unit-normalized direction vectors, regardless of input norm — the upstream re-normalizes anyway, so this wouldn't help).
+- **Cap at 2-3 middle layers (e.g., 30-31).** Rejected: still a multi-layer cap with ill-aligned PC direction; the same coherence-collapse mechanism applies, just more weakly. Cleaner to commit to single-layer at the extraction layer.
+- **Abort Phase D entirely.** Rejected: the H1+H2 narrative needs the multi-axis defence question answered. Single-layer cap at L*=14 is a valid (and arguably cleaner) defence formulation that the directive's wording allows.
+
+**Reason:** Single-layer cap at L*=14 keeps PC2/PC3 cap action on the activation layer where the PC was extracted (= the layer where the direction is geometrically meaningful for role-vs-default contrast) AND where the PC3 attack injects (`addition_layers: [14]`). It directly counters the attack at the same layer rather than at downstream layers where the attack's perturbation has been mixed with intervening transformer computation. This is a tighter and more principled defence formulation than the 8-layer reuse.
+
+**Source:**
+- Failure data: `results/phase_d/gemma_4_31b_thinking_off/.step4.done` (now wiped) showing 0% coherence at all percentiles. Sample rollout: `results/phase_d/.../rollouts/val_pc2_judged.parquet` (also wiped, but visible in the pre-restart inspection above).
+- Math: cap formula `excess = max(<h, v_unit> - τ, 0); h -= excess · v_unit` with v_unit = -signmatched_pc2_unit at layers 27-34 (each), where activation norms ~300 vs cumulative excess ~640. Plus the directive's coherence floor (0.90) being violated by 90 percentage points.
+
+**Reversibility:** medium. To revert (re-apply 8-layer PC reuse), restore the loop over `setup["capping_layers"]` in `_save_cap_vec` invocations + change `_resolve_pc_tau` back to returning a per-layer list. ~10 lines. But since the failure mode is now documented, the revert would need a different strategy than 8-layer reuse to avoid the same collapse.
+
+**Downstream dependencies:**
+- Phase D headline numbers depend on this layer-scope choice. The "multi-axis cap" claim now means "AA at 27-34 + PC2/PC3 at 14".
+- Cross-subject panels (Phase F) should note the asymmetry: AA range 27-34 (paper's heuristic for capping center), PC range = single L*=14 (extraction layer). Worth a methods footnote.
+- If post-writeup we want the 8-layer multi-axis cap result for completeness, the per-layer PCA refit alternative is the documented add-back path.
+
+## [2026-05-03 20:44] Phase D thread A — multi-axis defence result on g4_off: partial close, mechanism explained
+
+**Decision:** Phase D thread A is COMPLETE on Gemma 4 31B thinking-OFF. Multi-axis cap (AA + PC2 + PC3, with PC2/PC3 single-layer at L*=14) **partially closes** the PC3-attack blind spot (23.62% → 22.05%, a 1.57 pp improvement, ≈12% of the original 13.4 pp recovery), with full coherence preservation. The result does NOT fully restore the unsteered 10.2% baseline, and the mechanism is now understood: cap-before-attack hook ordering at the same layer prevents the PC3 cap from clamping the attack injection in-place.
+
+**Numbers (test split, n=508/cell):**
+
+| Defence | No attack | adv_null λ=0.25 | **PC3 attack λ=0.25** |
+|---|---|---|---|
+| AA-cap only            | 11.22% | 18.70% | **23.62%** |
+| AA + PC2-cap (p10)     | 10.83% | 17.52% | 24.61% |
+| AA + PC2 + PC3-cap (p25) | 10.63% | 17.52% | **22.05%** |
+
+(τ_PC2 = 10th percentile, τ_PC3 = 25th percentile of role-rollout projection at L*=14, both selected on the 200-prompt validation subset under PC3 attack.)
+
+**Coherence sustained at ≥0.9665 across all 9 cells.** No coherence-vs-defence tradeoff at the chosen percentiles.
+
+**Interpretation:**
+1. **Multi-axis cap helps modestly under non-injection attacks (adv_null: −1.18 pp), helps marginally under matched-axis attack (PC3: −1.57 pp), and barely moves the no-attack baseline (−0.59 pp).**
+2. **PC2 cap alone is unhelpful or slightly harmful against PC3 attack** (24.61% > 23.62%) — wrong axis. PC3 cap is what carries the (small) reduction.
+3. **AA cap on g4_off is itself net-negative** (10.2% baseline → 11.22% AA-capped). The "broken AA cap" finding from Phase B persists. Multi-axis cap walks back to ~10.63% — close to baseline but no defence margin.
+4. **Mechanistic ceiling:** PC3 cap fires before PC3 attack at L*=14 (steerer registration order: cap → steer; PyTorch fires hooks in order at each layer). The cap clamps pre-attack activation; the attack adds the harm-positive component immediately afterward; the L*=15..L26 layers see the full attack until AA cap at L27-34 catches some. To fully close the gap, PC3 cap would need to fire AFTER the attack at the same layer (hook-order swap, ~10 LOC) or at later layers (per-layer PCA refit, ~6 hr re-run).
+
+**Source:**
+- Run logs: `logs/phase_d_v2_20260503_122625.log`.
+- Output artifacts: `results/phase_d/gemma_4_31b_thinking_off/{headline.json, multi_axis_calibration.json, test_split.parquet, test_split_summary.csv}`.
+- Phase B comparison: `results/phase_b/gemma_4_31b_thinking_off/headline.json` (AA-cap-only baseline cells reused into Phase D test split).
+
+**Reversibility:** N/A (run complete; data-only result).
+
+**Downstream dependencies:**
+- Phase F (report figures): the multi-axis defence panel for g4_off should show the 9-cell matrix and a short caption noting the mechanistic ceiling. Cross-subject framing should compare g4_off's "partial close" against Qwen's "AA-alone is sufficient" and g4_on's "small PC2 residual" — three different multi-axis-defence regimes across the subject set.
+- Phase E (capability eval): per directive, add `multi-axis-cap` (best config = AA + PC2(p10) + PC3(p25) at L*=14) as a third condition for g4_off only on IFEval/GSM8k/EQ-Bench. The defence reaches ~10.63% baseline harm with 100% coherence, so capability cost should be small but is empirical.
+- Future "cap-after-attack" extension: if a reviewer wants to know whether the gap can be fully closed with a hook-order swap, the experiment is ~45 min (one 508-prompt cell with reversed cap/steer registration in `steerer.py::cap_and_steer`). This is a tight, defensible follow-up question.
+- Ext I (thinking-vs-answer split, deferred): not affected by this result. g4_off doesn't have a thinking trace.
+
+---
+
+## 2026-05-04 — Phase E (capability eval, trimmed) launch decisions
+
+**Source.** Phase E setup, before launching the multi-subject sweep (`plans/may_3_directive.md` 2026-05-03 thread C).
+
+### Decision A — Combined-bench rollout per (subject, condition) cell
+**What.** Concatenate IFEval + GSM8k + EQ-Bench prompts (n=541 + 1000 + 171 = 1712) into a single parquet tagged with a `dataset` column, then run **one** rollout per (subject, condition) covering all three benches. Per-bench scoring is a post-hoc filter on `dataset`.
+**Why.** Per-cell model load is ~60-90s on Gemma 2 / Qwen 3 / Gemma 4 at TP=1 on the 96 GB Blackwell host. Per-bench rollouts would triple the model-load wall-clock (27 cells × ~75s ≈ 34 min vs 9 cells × ~75s ≈ 11 min). Cost of unifying generation params across benches is small (max_new_tokens=1024 over-allocates GSM8k/EQ-Bench, but actual wall-clock is set by EOS not by the cap).
+**Alternatives considered.** Per-bench rollouts (rejected: 3× load overhead, no methodological benefit). Per-bench `max_new_tokens` via custom batching (rejected: requires patching `run_subject_rollouts.py` for per-row token budgets — disproportionate work for marginal speedup).
+**Reversibility.** High. The combined prompts parquet is regenerated from JSONL each step 1; switching to per-bench parquets is a 5-line change.
+
+### Decision B — IFEval kwargs serialized as JSON strings in the prompts parquet
+**What.** `instruction_id_list_json` and `kwargs_json` columns hold JSON strings per row instead of native Python lists/dicts. Scorer parses them back at score time.
+**Why.** Pandas/pyarrow infer a single column schema across all 541 IFEval rows. The kwargs column is heterogeneous — different rows have different sub-keys depending on instruction type. PyArrow unions all keys and pads each row's dict with `None` for keys it doesn't have. Verified: the unioned schema turned `{"num_highlights": 3}` into a 24-key dict with 23 fields = `None` and `num_highlights = 3.0` (float, not int). The josejg `instruction_following_eval` checker for `length_constraints:number_words` treats `relation: None` as a syntax error; the int-vs-float typo also broke type-strict comparisons.
+**Reversibility.** Trivial. Swap the JSON-string columns for native pandas objects when pyarrow schema inference improves.
+
+### Decision C — Per-subject normalize cap vector files to `vector` key
+**What.** Step 1 re-saves every AA / multi-axis cap vector under `results/phase_e/vectors/<subject>/<axis_group>/...` with safetensors key `vector`.
+**Why.** Plan B's Gemma 2 27B AA cap files were saved with key `v` while Phase B / Phase D (newer) used `vector`. The HF backend's `_load_vec` accepts both, but SGLang's `capping_factory._load_vector` defaults to `vector` and would silently load the wrong tensor (or fail) on Gemma 2 27B SGLang cells. Normalization once at setup avoids the dispatch-time bug AND avoids modifying source artifacts that other phases consume.
+**Reversibility.** High. The normalized files live under `results/phase_e/`; deleting them and re-running step 1 reconstructs from `aa_cap_sources` paths.
+
+### Decision D — Per-backend venv routing in the orchestrator
+**What.** `_python_for_backend(backend)` routes each child subprocess: `vllm`/`hf` → `.venv/bin/python`, `sglang` → `.venv-sglang/bin/python`. Parent stays venv-agnostic.
+**Why.** `.venv` has vllm + transformers + accelerate (HF backend works) but not sglang. `.venv-sglang` has sglang + transformers but not vllm or accelerate (HF backend fails: `device_map="auto"` requires accelerate). Phase E sweeps mixed backends per the directive (Gemma 2 / Qwen 3 = SGLang for steered cells, Gemma 4 modes = HF for steered cells, all unsteered = vllm), so per-cell routing is required. This inverts Phase B/D's pattern (where one orchestrator was venv-pinned per single-subject phase).
+**Alternatives considered.** Install `accelerate` into `.venv-sglang` so both venvs can host any backend (rejected: avoids cross-venv dep drift, but per-phase install is fragile and pollutes the SGLang env). Pin `assert_venv_for_subject` to skip the SGLang check on multi-subject orchestrators (rejected: silently weakens the safety guard).
+**Reversibility.** High. `_python_for_backend` is a single helper; rerouting is one edit if a future env consolidation lands.
+
+### Decision F — Per-cell timeout in orchestrator bumped 14400 → 28800
+**What.** `run_in_subprocess(timeout_seconds=...)` in `src/experiments/phase_e.py::step_2_rollouts` raised from 4 hr to 8 hr per cell.
+**Why.** g4_off AA-cap on HF (cell 6) and multi-axis-cap on HF (cell 7) each took ~115 min — comfortably under 4 hr. g4_on AA-cap on HF (cell 9) hit the 4 hr ceiling because thinking-mode-ON inflates output tokens (reasoning traces add ~2-3× per-prompt generation length). Killed mid-run by the orchestrator timeout despite the underlying generation being healthy.
+**Reversibility.** Trivial. Single integer in `phase_e.py`.
+
+### Decision G — SGLang request_timeout_seconds bumped 600 → 7200
+**What.** `configs/inference_runtime.yaml::sglang_defaults.request_timeout_seconds` raised from 10 min to 2 hr.
+**Why.** Per-request timeout in `_run_sglang` starts at `session.post()` entry, not at connection acquisition. With aiohttp connector limit=32 and 1712 prompts queued, the (1712 - 32) backlogged requests start their own 600s clock while waiting for a connection slot. Verified: cell 4 (qwen_3_32b AA-cap on SGLang) failed after ~13 min when the first batch beyond ~12-19 connection-pool waves exceeded 600s wait time. Phase B's 508-prompt subsets fit under 600s, so the bump is purely additive ceiling.
+**Reversibility.** Trivial. Single integer in YAML.
+
+### Decision E — vllm profile = "long" (not "short") for unsteered rollouts
+**What.** `vllm_profile: long` in `configs/phase_e.yaml` → max_model_len=8192 instead of 2048.
+**Why.** EQ-Bench p99 input length is ~990 tokens before chat-template overhead. With max_input_len=1024 + max_new_tokens=1024, the "short" profile's 2048 max_model_len leaves no margin for chat template tokens. "Long" eliminates the risk of vLLM truncation/error on the long tail of EQ-Bench prompts at modest throughput cost (decode-bound, not KV-cache-bound at our prompt counts).
+**Reversibility.** Trivial. Change the YAML field; existing rollouts are unaffected.

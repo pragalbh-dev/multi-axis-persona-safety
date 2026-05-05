@@ -1198,6 +1198,15 @@ wheels = [
 ]
 
 [[package]]
+name = "immutabledict"
+version = "4.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/e6/718471048fea0366c3e3d1df3acfd914ca66d571cdffcf6d37bbcd725708/immutabledict-4.3.1.tar.gz", hash = "sha256:f844a669106cfdc73f47b1a9da003782fb17dc955a54c80972e0d93d1c63c514", size = 7806, upload-time = "2026-02-15T10:32:34.668Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/ce/f9018bf69ae91b273b6391a095e7c93fa5e1617f25b6ba81ad4b20c9df10/immutabledict-4.3.1-py3-none-any.whl", hash = "sha256:c9facdc0ff30fdb8e35bd16532026cac472a549e182c94fa201b51b25e4bf7bf", size = 5000, upload-time = "2026-02-15T10:32:33.672Z" },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "8.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1216,6 +1225,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "instruction-following-eval"
+version = "0.1.0"
+source = { git = "https://github.com/josejg/instruction_following_eval.git#0c495b2f95155e8b10acb919ae283bfb4d5be6e2" }
+dependencies = [
+    { name = "immutabledict" },
+    { name = "langdetect" },
+    { name = "nltk" },
+    { name = "pandas" },
+    { name = "typer" },
 ]
 
 [[package]]
@@ -1686,6 +1707,15 @@ wheels = [
 ]
 
 [[package]]
+name = "langdetect"
+version = "1.0.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0e/72/a3add0e4eec4eb9e2569554f7c70f4a3c27712f40e3284d483e88094cc0e/langdetect-1.0.9.tar.gz", hash = "sha256:cbc1fef89f8d062739774bd51eda3da3274006b3661d199c2655f6b3f6d605a0", size = 981474, upload-time = "2021-05-07T07:54:13.562Z" }
+
+[[package]]
 name = "lark"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1958,6 +1988,7 @@ dependencies = [
     { name = "datasets" },
     { name = "hf-transfer" },
     { name = "huggingface-hub" },
+    { name = "instruction-following-eval" },
     { name = "matplotlib" },
     { name = "nnsight" },
     { name = "numpy" },
@@ -1994,6 +2025,7 @@ requires-dist = [
     { name = "datasets", specifier = ">=3.1" },
     { name = "hf-transfer", specifier = ">=0.1.9" },
     { name = "huggingface-hub", specifier = ">=1.0" },
+    { name = "instruction-following-eval", git = "https://github.com/josejg/instruction_following_eval.git" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "nnsight", specifier = ">=0.4" },
     { name = "numpy", specifier = ">=2.0,<3" },
@@ -2202,6 +2234,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/95/97/51359c77527d45943fe7a94d00a3843b81162e6c4244b3579fe8fc54cb9c/ninja-1.13.0-py3-none-win32.whl", hash = "sha256:8cfbb80b4a53456ae8a39f90ae3d7a2129f45ea164f43fadfa15dc38c4aef1c9", size = 267201, upload-time = "2025-08-11T15:10:15.158Z" },
     { url = "https://files.pythonhosted.org/packages/29/45/c0adfbfb0b5895aa18cec400c535b4f7ff3e52536e0403602fc1a23f7de9/ninja-1.13.0-py3-none-win_amd64.whl", hash = "sha256:fb8ee8719f8af47fed145cced4a85f0755dd55d45b2bddaf7431fa89803c5f3e", size = 309975, upload-time = "2025-08-11T15:10:16.697Z" },
     { url = "https://files.pythonhosted.org/packages/df/93/a7b983643d1253bb223234b5b226e69de6cda02b76cdca7770f684b795f5/ninja-1.13.0-py3-none-win_arm64.whl", hash = "sha256:3c0b40b1f0bba764644385319028650087b4c1b18cdfa6f45cb39a3669b81aa9", size = 290806, upload-time = "2025-08-11T15:10:18.018Z" },
+]
+
+[[package]]
+name = "nltk"
+version = "3.9.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "regex" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/a1/b3b4adf15585a5bc4c357adde150c01ebeeb642173ded4d871e89468767c/nltk-3.9.4.tar.gz", hash = "sha256:ed03bc098a40481310320808b2db712d95d13ca65b27372f8a403949c8b523d0", size = 2946864, upload-time = "2026-03-24T06:13:40.641Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/91/04e965f8e717ba0ab4bdca5c112deeab11c9e750d94c4d4602f050295d39/nltk-3.9.4-py3-none-any.whl", hash = "sha256:f2fa301c3a12718ce4a0e9305c5675299da5ad9e26068218b69d692fda84828f", size = 1552087, upload-time = "2026-03-24T06:13:38.47Z" },
 ]
 
 [[package]]

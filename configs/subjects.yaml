@@ -9,16 +9,29 @@
 # 2026-04-25 fp8 -> bf16 revert entry.
 #
 # Verified against HuggingFace 2026-04-24/25 (see plans/decisions.md).
+#
+# gpu_memory_utilization: 0.90 (bumped 2026-04-30 from 0.85). Verified by Gemma 4 31B
+# smoke at TP=1 on 96 GB Blackwell: 94.55/96 GB used, 25.1 tok/s vs 20.5 tok/s at 0.85 —
+# bigger KV cache improves prefill/decode reuse. On 4x RTX 5090 (32 GB each) 0.90 is
+# consistent with inference_grid measurements (119-126 GB total at the prior 0.85 ceiling).
+# Trade-off: ~10% headroom for transient allocator spikes; if a subject OOMs at startup,
+# drop that entry to 0.85.
+#
+# tensor_parallel_size kept at the 4-GPU canonical value; src/utils/config.py::load_subjects
+# auto-clamps to torch.cuda.device_count() at load time, so this YAML doesn't need editing
+# when moving between the 4x RTX 5090 laptop and a 1-GPU box.
 
 gemma_2_27b:
   role: subject
   hf_id: google/gemma-2-27b-it
   base_hf_id: google/gemma-2-27b-it
   tensor_parallel_size: 4
-  gpu_memory_utilization: 0.85
+  gpu_memory_utilization: 0.90
   trust_remote_code: false
   attention_backend: null
   chat_template_kwargs: {}
+  steered_backend: sglang               # spike 2026-04-30: 1.84x per-token, 2.78x wall-clock vs HF
+  layer_module_glob_prefix: model.layers
   notes: |
     bf16 base (gated; license accepted on account ub0001).
     46-layer Gemma2ForCausalLM, d_model 4608. 32 attention heads -> divides
@@ -29,11 +42,13 @@ qwen_3_32b:
   hf_id: Qwen/Qwen3-32B
   base_hf_id: Qwen/Qwen3-32B
   tensor_parallel_size: 4
-  gpu_memory_utilization: 0.85
+  gpu_memory_utilization: 0.90
   trust_remote_code: false
   attention_backend: null
   chat_template_kwargs:
     enable_thinking: false              # paper reproduction fidelity
+  steered_backend: sglang               # standard Qwen3 arch + flash-attn supported; spike trusted to generalize from Gemma 2
+  layer_module_glob_prefix: model.layers
   notes: |
     bf16 base. 64-layer Qwen3ForCausalLM, d_model 5120. 64 attention heads
     -> TP=4 splits cleanly. Toggle thinking off via chat_template_kwargs.
@@ -43,23 +58,67 @@ gemma_4_31b:
   hf_id: google/gemma-4-31B-it
   base_hf_id: google/gemma-4-31B-it
   tensor_parallel_size: 4
-  gpu_memory_utilization: 0.85
+  gpu_memory_utilization: 0.90
   trust_remote_code: true               # Gemma 4 multimodal custom ops
   attention_backend: null               # FLASHINFER bug (vLLM #40677) was fp8-codepath specific; bf16 path uses default
   chat_template_kwargs: {}              # per-call override for thinking ON/OFF (see smoke_load)
   thinking_modes: ["on", "off"]         # quoted: bare on/off are YAML booleans
+  steered_backend: hf                   # spike 2026-04-30: SGLang 0.5.10 has no native gemma4.py; FlashInfer rmsnorm shape bug
+  layer_module_glob_prefix: model.language_model.layers   # multimodal: language_model is nested
   notes: |
     bf16 base. Gemma4ForConditionalGeneration (multimodal; text-only use here).
     60-layer text transformer, d_model 5376. trust_remote_code required.
     Smoke C5 must verify TRITON_ATTN is unnecessary on the bf16 path; if
     FLASHINFER breaks here too, re-add attention_backend: TRITON_ATTN.
 
+# Per may_3_directive 2026-04-30: Gemma 4 31B thinking-ON and thinking-OFF are
+# treated as two distinct subjects (separate result dirs, separate caches) but
+# share the same hf_id + load semantics as gemma_4_31b above. Difference is
+# chat_template_kwargs only. model_family_for() resolves both to the gemma_4
+# family via prefix-match, so model_hooks.yaml lookup needs no changes.
+# eval_sizes.yaml additions deferred to Phase E (capability eval) — copy the
+# gemma_4_31b entries when needed.
+gemma_4_31b_thinking_on:
+  role: subject
+  hf_id: google/gemma-4-31B-it
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.90
+  trust_remote_code: true
+  attention_backend: null
+  chat_template_kwargs:
+    enable_thinking: true               # thinking-mode ON for this subject
+  steered_backend: hf
+  layer_module_glob_prefix: model.language_model.layers
+  notes: |
+    Gemma 4 31B with thinking ON. Per CLAUDE.md "Models" → Tier 2 core, Phase A
+    extraction must split activations at thinking-tokens vs answer-tokens and
+    fit PCAs on each (compare). Hook glob and weights identical to
+    gemma_4_31b above; per-rollout token-span tagging happens in the extraction
+    backend, not here.
+
+gemma_4_31b_thinking_off:
+  role: subject
+  hf_id: google/gemma-4-31B-it
+  base_hf_id: google/gemma-4-31B-it
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.90
+  trust_remote_code: true
+  attention_backend: null
+  chat_template_kwargs:
+    enable_thinking: false              # thinking-mode OFF for this subject
+  steered_backend: hf
+  layer_module_glob_prefix: model.language_model.layers
+  notes: |
+    Gemma 4 31B with thinking OFF. Standard answer-token extraction; no
+    thinking-token PCA split needed.
+
 qwen_3_6_27b:
   role: judge_primary
   hf_id: Qwen/Qwen3.6-27B
   base_hf_id: Qwen/Qwen3.6-27B
   tensor_parallel_size: 4
-  gpu_memory_utilization: 0.85
+  gpu_memory_utilization: 0.90
   trust_remote_code: false
   attention_backend: null
   max_model_len: 2048

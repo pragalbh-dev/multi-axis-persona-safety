@@ -1,0 +1,71 @@
+# Phase E — Capability eval (trimmed) per `plans/may_3_directive.md` 2026-05-03 thread C.
+#
+# Scope: 4 subjects × {unsteered, aa_cap} × {IFEval, GSM8k, EQ-Bench}
+# Plus:  multi_axis_cap × 3 benches on gemma_4_31b_thinking_off only
+# Total: 8 (subject×condition) + 1 (multi_axis on g4_off) = 9 rollout cells.
+# MMLU-Pro DROPPED entirely per directive (revivable on demand).
+#
+# Per-cell pattern:
+#   1. Load subject once via run_subject_rollouts (vllm for unsteered;
+#      hf/sglang per subjects.yaml::<id>.steered_backend for steered).
+#   2. Roll out a *combined* parquet that concatenates IFEval + GSM8k + EQ-Bench
+#      prompts (each row tagged with `dataset`). One model load per cell, scoring
+#      per-bench is a post-hoc split on `dataset`.
+#   3. Use max_input_len = 1024, max_new_tokens = 1024 — covers all three
+#      benches' p99 input lengths and longest expected answer (IFEval).
+
+experiment_id: phase_e
+seed: 42
+output_dir: results/phase_e
+
+subjects:
+  - gemma_2_27b
+  - qwen_3_32b
+  - gemma_4_31b_thinking_off
+  - gemma_4_31b_thinking_on
+
+# Where AA cap inputs live per subject.
+# - new subjects (qwen_3_32b, g4_off, g4_on): consume Phase B's .step1.done
+# - gemma_2_27b (Plan B): consume plan_b_gemma2_27b/extraction/{vectors,tau_calibration.json}
+aa_cap_sources:
+  gemma_2_27b:
+    type: plan_b
+    dir: results/plan_b_gemma2_27b
+  qwen_3_32b:
+    type: phase_b
+    dir: results/phase_b/qwen_3_32b
+  gemma_4_31b_thinking_off:
+    type: phase_b
+    dir: results/phase_b/gemma_4_31b_thinking_off
+  gemma_4_31b_thinking_on:
+    type: phase_b
+    dir: results/phase_b/gemma_4_31b_thinking_on
+
+# Multi-axis-cap is g4_off only (per directive thread C). Source = Phase D.
+multi_axis_subjects:
+  gemma_4_31b_thinking_off:
+    phase_d_dir: results/phase_d/gemma_4_31b_thinking_off
+
+# Benchmarks (parquets prepped from data/eval/<bench>/prompts.jsonl in step 1).
+benches:
+  ifeval:
+    src_jsonl: data/eval/ifeval/prompts.jsonl
+    prompt_field: prompt
+  gsm8k:
+    src_jsonl: data/eval/gsm8k_1000/prompts.jsonl
+    prompt_field: question
+  eq_bench:
+    src_jsonl: data/eval/eq_bench/prompts.jsonl
+    prompt_field: prompt
+
+# Generation params — uniform across benches and conditions to allow a single
+# combined rollout per (subject, condition) cell.
+max_input_len: 1024
+max_new_tokens: 1024
+hf_steered_batch_size: 8
+
+# vLLM profile for unsteered rollouts. "long" (max_model_len=8192) is safer
+# than "short" (2048) — EQ-Bench p99 is ~990 tokens of input + chat template
+# overhead, leaving 1024 max_new_tokens fitting within long's 8192 ceiling
+# with comfortable margin. Throughput cost is small at our prompt count.
+vllm_profile: long

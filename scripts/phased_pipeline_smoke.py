@@ -28,13 +28,12 @@ from src.utils import env  # noqa: F401
 
 import pandas as pd  # noqa: E402
 import torch  # noqa: E402
-import yaml  # noqa: E402
+
+from src.utils.config import load_subjects  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = PROJECT_ROOT / "results" / "stage_0_smoke"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-SUBJECTS_YAML = PROJECT_ROOT / "configs" / "subjects.yaml"
 
 # A small synthetic prompt set — covers a mix of "helpful" and "role-play" frames.
 SYNTH_PROMPTS = [
@@ -50,7 +49,7 @@ CROSS_CHECK_N = 25
 
 
 def _load_cfg():
-    return yaml.safe_load(SUBJECTS_YAML.read_text())
+    return load_subjects()
 
 
 def _teardown(llm):

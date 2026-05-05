@@ -19,7 +19,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.utils.config import assert_venv_for_subject, resolved_steered_backend  # noqa: E402
 from src.utils.model_runner import run_in_subprocess  # noqa: E402
+
+assert_venv_for_subject("gemma_2_27b")
+_STEER_BACKEND = resolved_steered_backend("gemma_2_27b")
 
 OUT_DIR = Path("results/plan_b_gemma2_27b/_sanity_lambda_sweep")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,7 +66,7 @@ def main() -> None:
                 "src.evaluation.run_subject_rollouts",
                 {
                     "model_id": "gemma_2_27b",
-                    "backend": "hf",
+                    "backend": _STEER_BACKEND,
                     "prompts_path": str(sub_path),
                     "output_path": str(out_path),
                     "condition_id": f"aa_capped_pc2_pos_lam{lam}",

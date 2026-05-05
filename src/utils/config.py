@@ -40,15 +40,92 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 _SUBJECTS_CACHE: dict[str, Any] | None = None
+_SUBJECTS_CACHE_GPU_COUNT: int | None = None
 _HOOKS_CACHE: dict[str, Any] | None = None
 _EVAL_SIZES_CACHE: dict[str, Any] | None = None
 
 
+def _detect_gpu_count() -> int:
+    """Return torch.cuda.device_count() if CUDA is available; else 0.
+
+    CUDA filters non-existent indices in CUDA_VISIBLE_DEVICES at enumeration
+    time, so this returns the count of usable GPUs visible to the process.
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return torch.cuda.device_count()
+    except Exception:
+        pass
+    return 0
+
+
+def _resolve_tp(configured: int, available: int) -> int:
+    """Clamp configured TP down to the largest power-of-2 ≤ available GPUs.
+
+    subjects.yaml records the canonical (ideal-hardware) TP. On machines with
+    fewer GPUs, we drop to the largest valid TP that still fits, preserving
+    head-count divisibility (TPs are a power of 2 across our subjects).
+
+    available=0 means CUDA not visible (CPU-only test or import-time call) —
+    return the configured value unchanged so validation/tests still see it.
+    """
+    if available <= 0:
+        return configured
+    target = min(configured, available)
+    valid = 1
+    for p in (1, 2, 4, 8):
+        if p <= target:
+            valid = p
+    return valid
+
+
+def _clamp_tp_in_place(raw: dict[str, Any], available: int) -> None:
+    """Mutate `raw` so every top-level entry's `tensor_parallel_size` fits the
+    visible GPU count. Original value is preserved as `tensor_parallel_size_configured`."""
+    for cfg in raw.values():
+        if isinstance(cfg, dict) and "tensor_parallel_size" in cfg:
+            configured = int(cfg["tensor_parallel_size"])
+            resolved = _resolve_tp(configured, available)
+            if resolved != configured:
+                cfg["tensor_parallel_size_configured"] = configured
+                cfg["tensor_parallel_size"] = resolved
+
+
 def load_subjects() -> dict[str, Any]:
-    global _SUBJECTS_CACHE
-    if _SUBJECTS_CACHE is None:
-        _SUBJECTS_CACHE = _load_yaml(CONFIGS_DIR / "subjects.yaml")
+    """Load configs/subjects.yaml with `tensor_parallel_size` clamped to the
+    GPUs actually visible on this machine. The canonical YAML keeps the
+    ideal-hardware TP (e.g. 4 for the 4× RTX 5090 setup); on a 1-GPU host this
+    auto-resolves to 1 with no doc/script edits."""
+    global _SUBJECTS_CACHE, _SUBJECTS_CACHE_GPU_COUNT
+    available = _detect_gpu_count()
+    if _SUBJECTS_CACHE is None or _SUBJECTS_CACHE_GPU_COUNT != available:
+        raw = _load_yaml(CONFIGS_DIR / "subjects.yaml")
+        _clamp_tp_in_place(raw, available)
+        _SUBJECTS_CACHE = raw
+        _SUBJECTS_CACHE_GPU_COUNT = available
     return _SUBJECTS_CACHE
+
+
+_INFERENCE_RUNTIME_CACHE: dict[str, Any] | None = None
+_INFERENCE_RUNTIME_CACHE_GPU_COUNT: int | None = None
+
+
+def load_inference_runtime() -> dict[str, Any]:
+    """Load configs/inference_runtime.yaml with the same TP-clamping behavior
+    as `load_subjects()`. Preserves the canonical 4-GPU profile values."""
+    global _INFERENCE_RUNTIME_CACHE, _INFERENCE_RUNTIME_CACHE_GPU_COUNT
+    available = _detect_gpu_count()
+    if (
+        _INFERENCE_RUNTIME_CACHE is None
+        or _INFERENCE_RUNTIME_CACHE_GPU_COUNT != available
+    ):
+        raw = _load_yaml(CONFIGS_DIR / "inference_runtime.yaml")
+        _clamp_tp_in_place(raw, available)
+        _INFERENCE_RUNTIME_CACHE = raw
+        _INFERENCE_RUNTIME_CACHE_GPU_COUNT = available
+    return _INFERENCE_RUNTIME_CACHE
 
 
 def load_model_hooks() -> dict[str, Any]:
@@ -63,6 +140,70 @@ def load_eval_sizes() -> dict[str, Any]:
     if _EVAL_SIZES_CACHE is None:
         _EVAL_SIZES_CACHE = _load_yaml(CONFIGS_DIR / "eval_sizes.yaml")
     return _EVAL_SIZES_CACHE
+
+
+def resolved_steered_backend(model_id: str) -> str:
+    """Return the backend ('hf' or 'sglang') to use for steered/capped rollouts
+    of `model_id`, per `configs/subjects.yaml::<id>.steered_backend`.
+
+    Defaults to 'hf' if the key is missing — preserves pre-2026-04-30 behavior
+    for any subject that hasn't been opted into SGLang.
+    """
+    subjects = load_subjects()
+    cfg = subjects.get(model_id, {})
+    backend = cfg.get("steered_backend", "hf")
+    if backend not in {"hf", "sglang"}:
+        raise ValueError(
+            f"subjects.yaml::{model_id}.steered_backend must be 'hf' or 'sglang' (got {backend!r})"
+        )
+    return backend
+
+
+def assert_venv_for_subject(model_id: str) -> None:
+    """Fail-loudly guard: verify sys.executable matches the resolved steered backend.
+
+    For steered_backend=sglang subjects, sys.executable must point at
+    `.venv-sglang/bin/python` — the only env where `sglang` is importable.
+    If this guard isn't hit and the orchestrator is launched under `.venv` (vLLM
+    env), `_run_sglang` would invoke `sys.executable -m sglang.launch_server`
+    and crash *after* upstream phases (vLLM unsteered, extraction, etc.) have
+    already run for hours. The guard fires at orchestrator entry, before any
+    cost is sunk.
+
+    No-op when steered_backend=hf (HF works in either venv) or when the
+    `.venv-sglang/bin/python` path doesn't exist (e.g., laptop without SGLang).
+    """
+    import sys
+    backend = resolved_steered_backend(model_id)
+    if backend != "sglang":
+        return
+    expected_venv = REPO_ROOT / ".venv-sglang"
+    expected_python = expected_venv / "bin" / "python"
+    if not expected_python.exists():
+        # SGLang env not provisioned on this host. Don't block — but warn.
+        print(
+            f"WARNING: subject {model_id!r} resolves to steered_backend=sglang "
+            f"but {expected_python} does not exist. Steered conditions will fail.",
+            file=sys.stderr,
+        )
+        return
+    # NOTE: compare unresolved paths because .venv/bin/python and
+    # .venv-sglang/bin/python are both symlinks to the system python — .resolve()
+    # collapses both to the same target. The venv identity lives in the path
+    # name, not the symlink target.
+    actual = Path(sys.executable)
+    if actual == expected_python or expected_venv in actual.parents:
+        return
+    raise SystemExit(
+        f"\nERROR: subject {model_id!r} requires steered_backend=sglang, but "
+        f"this process is running under:\n"
+        f"  {actual}\n"
+        f"Required interpreter:\n"
+        f"  {expected_python}\n"
+        f"Fix: source .venv-sglang/bin/activate  (then re-run the same command)\n"
+        f"Or:  pin steered_backend: hf in configs/subjects.yaml::{model_id} "
+        f"to opt this subject out of SGLang.\n"
+    )
 
 
 def model_family_for(model_id: str) -> str:
@@ -174,8 +315,8 @@ class ExperimentConfig(BaseModel):
     @field_validator("tensor_parallel")
     @classmethod
     def _check_tp(cls, v: int) -> int:
-        if v not in {1, 2, 4}:
-            raise ValueError(f"tensor_parallel must be 1, 2, or 4 (got {v})")
+        if v not in {1, 2, 4, 8}:
+            raise ValueError(f"tensor_parallel must be 1, 2, 4, or 8 (got {v})")
         return v
 
     @field_validator("model_id")

@@ -1,0 +1,31 @@
+# Phase B — Attack arm for Gemma 4 31B (thinking OFF), subject 2 of 3 per may_3_directive.md.
+#
+# Reads Phase A artifacts under results/phase_a/gemma_4_31b_thinking_off/extraction/
+# (AA, PCs at L*=14, tau, lmsys_norm). Hardware: 1× RTX PRO 6000 Blackwell 96 GB,
+# TP=1. Steered backend = HF (Gemma 4 doesn't have SGLang `--forward-hooks` support yet).
+
+experiment_id: phase_b_gemma_4_31b_thinking_off
+subject_id: gemma_4_31b_thinking_off
+seed: 42
+output_dir: results/phase_b/gemma_4_31b_thinking_off
+
+model_id: gemma_4_31b_thinking_off
+phase_a_dir: results/phase_a/gemma_4_31b_thinking_off
+
+pc_indices_to_attack: [2, 3]
+include_v_harm_attack: true
+include_adversarial_null_space: true
+n_random_baselines: 2
+multi_axis_pc_indices: [2, 3]
+
+lambda_schedule: [0.05, 0.10, 0.15, 0.20, 0.25]
+coherence_floor: 0.80
+
+mini_n_per_stratum: 25
+
+hf_steered_batch_size: 8
+hf_steered_max_input_len: 4096
+max_new_tokens: 256              # matches Phase A baseline (thinking OFF, no thinking trace)
+
+judge_model_id: qwen_3_6_27b
+judge_prompt_path: configs/judge_prompt.yaml

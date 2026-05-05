@@ -91,7 +91,9 @@ def main() -> None:
     import yaml
     from vllm import LLM, SamplingParams
 
-    rt = yaml.safe_load(Path("configs/inference_runtime.yaml").read_text())
+    from src.utils.config import load_inference_runtime
+
+    rt = load_inference_runtime()
     judge_cfg = rt[args["judge_model_id"]]
     profile = judge_cfg["profiles"]["judge"]
     chat_template_kwargs = judge_cfg.get("chat_template_kwargs") or {}

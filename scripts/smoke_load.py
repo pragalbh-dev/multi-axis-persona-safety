@@ -28,13 +28,12 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils import env  # noqa: F401  pins CUDA_VISIBLE_DEVICES=0,1,2,3
+from src.utils.config import load_subjects  # noqa: E402
 
 import torch  # noqa: E402
-import yaml  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = PROJECT_ROOT / "results" / "stage_0_smoke"
-SUBJECTS_YAML = PROJECT_ROOT / "configs" / "subjects.yaml"
 
 TEST_PROMPTS = [
     "Explain the difference between accuracy and precision in one paragraph.",
@@ -48,7 +47,7 @@ MAX_OUT_TOKENS = 128
 
 
 def _load_subjects() -> dict[str, dict[str, Any]]:
-    return yaml.safe_load(SUBJECTS_YAML.read_text())
+    return load_subjects()
 
 
 def _build_prompts(tokenizer, prompts: list[str], chat_template_kwargs: dict) -> list[str]:

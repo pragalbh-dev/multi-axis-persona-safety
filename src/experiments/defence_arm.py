@@ -260,15 +260,25 @@ def _build_defence_steering(
     }
 
 
+def _resolve_steer_backend(cfg: dict) -> str:
+    from src.utils.config import resolved_steered_backend
+    return resolved_steered_backend(cfg["model_id"])
+
+
 def step_3_matrix(cfg: dict, out_dir: Path, setup: dict) -> list[Path]:
     """Run (defence × attack) interaction matrix on the Phase 3 subset (harm-positive only).
 
     Subset is filtered to harm-positive rows only (n_pos) — controls were already
     saturated at low harm in Phase 3, so testing defence on them adds no signal
     beyond verifying capability (left for future capability-eval work).
+
+    Backend resolved per `configs/subjects.yaml::<id>.steered_backend`.
     """
     import pandas as pd
     from src.utils.model_runner import run_in_subprocess
+
+    _STEER_BACKEND = _resolve_steer_backend(cfg)
+    _log(f"step 3: steered backend = {_STEER_BACKEND}")
 
     marker = out_dir / ".step3.done"
     rollouts_dir = out_dir / "rollouts"
@@ -340,7 +350,7 @@ def step_3_matrix(cfg: dict, out_dir: Path, setup: dict) -> list[Path]:
                 "src.evaluation.run_subject_rollouts",
                 {
                     "model_id": cfg["model_id"],
-                    "backend": "hf",
+                    "backend": _STEER_BACKEND,
                     "prompts_path": str(subset_path),
                     "output_path": str(cond_path),
                     "condition_id": cond_id,
@@ -479,6 +489,10 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = yaml.safe_load(args.config.read_text())
+
+    from src.utils.config import assert_venv_for_subject
+    assert_venv_for_subject(cfg["model_id"])
+
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     _log(f"config: {args.config}; output_dir: {out_dir}")

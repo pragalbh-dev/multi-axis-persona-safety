@@ -326,8 +326,16 @@ def setup_capping_layers_from(setup: dict) -> list[int]:
 
 
 def step_2_mini_lambda_sweep(cfg: dict, out_dir: Path, setup: dict) -> list[Path]:
-    """HF compound runs at every (axis, λ) cell on the mini subset."""
+    """Compound runs at every (axis, λ) cell on the mini subset.
+
+    Backend resolved per `configs/subjects.yaml::<id>.steered_backend`
+    (sglang for Gemma 2 27B + Qwen 3 32B, hf for Gemma 4 31B).
+    """
+    from src.utils.config import resolved_steered_backend
     from src.utils.model_runner import run_in_subprocess
+
+    _STEER_BACKEND = resolved_steered_backend(cfg["model_id"])
+    _log(f"step 2: steered backend = {_STEER_BACKEND}")
 
     marker = out_dir / ".step2.done"
     rollouts_dir = out_dir / "rollouts" / "mini"
@@ -370,7 +378,7 @@ def step_2_mini_lambda_sweep(cfg: dict, out_dir: Path, setup: dict) -> list[Path
                 "src.evaluation.run_subject_rollouts",
                 {
                     "model_id": cfg["model_id"],
-                    "backend": "hf",
+                    "backend": _STEER_BACKEND,
                     "prompts_path": str(mini_path),
                     "output_path": str(cond_path),
                     "condition_id": cond_id,
@@ -522,11 +530,22 @@ def _lam_token_to_float(tok: str) -> float:
 # ============================================================================
 
 
+def _resolve_steer_backend(cfg: dict) -> str:
+    from src.utils.config import resolved_steered_backend
+    return resolved_steered_backend(cfg["model_id"])
+
+
 def step_5_full_runs(cfg: dict, out_dir: Path, setup: dict, pareto_path: Path) -> list[Path]:
-    """Full N_pos+2*N_pos runs at λ_max_coherent per axis + multi-axis composite."""
+    """Full N_pos+2*N_pos runs at λ_max_coherent per axis + multi-axis composite.
+
+    Backend resolved per `configs/subjects.yaml::<id>.steered_backend`.
+    """
     import torch
     from safetensors.torch import load_file, save_file
     from src.utils.model_runner import run_in_subprocess
+
+    _STEER_BACKEND = _resolve_steer_backend(cfg)
+    _log(f"step 5: steered backend = {_STEER_BACKEND}")
 
     marker = out_dir / ".step5.done"
     rollouts_dir = out_dir / "rollouts" / "full"
@@ -555,7 +574,7 @@ def step_5_full_runs(cfg: dict, out_dir: Path, setup: dict, pareto_path: Path) -
             "src.evaluation.run_subject_rollouts",
             {
                 "model_id": cfg["model_id"],
-                "backend": "hf",
+                "backend": _STEER_BACKEND,
                 "prompts_path": str(subset_path),
                 "output_path": str(cond_path),
                 "condition_id": cond_id,
@@ -615,7 +634,7 @@ def step_5_full_runs(cfg: dict, out_dir: Path, setup: dict, pareto_path: Path) -
                     "src.evaluation.run_subject_rollouts",
                     {
                         "model_id": cfg["model_id"],
-                        "backend": "hf",
+                        "backend": _STEER_BACKEND,
                         "prompts_path": str(subset_path),
                         "output_path": str(cond_path),
                         "condition_id": cond_id,
@@ -743,6 +762,10 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = yaml.safe_load(args.config.read_text())
+
+    from src.utils.config import assert_venv_for_subject
+    assert_venv_for_subject(cfg["model_id"])
+
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     _log(f"config: {args.config}; output_dir: {out_dir}")
